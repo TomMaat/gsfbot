@@ -58,6 +58,9 @@ const TICKET_TRANSCRIPT_CHANNEL_ID = "1568004866507276389";
 const WARN_ROLE_LEVEL1 = "1567269932515852290";
 const WARN_ROLE_LEVEL2 = "1567269932515852289";
 
+// ===== Auto-role bij join =====
+const AUTO_ROLE_ID = "1567269932515852291";
+
 // ===== Blacklist settings =====
 const BLACKLIST_CHANNEL_ID = "1568005409988415518";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -1875,6 +1878,14 @@ client.once("ready", async () => {
 });
 
 client.on("guildMemberAdd", async (member) => {
+  // Auto-role toekennen
+  try {
+    if (!member.user.bot) {
+      await member.roles.add(AUTO_ROLE_ID, "Auto-role bij join");
+    }
+  } catch (err) {
+    console.error("Auto-role error:", err);
+  }
   await sendWelcomeMessage(member);
 });
 
@@ -1905,7 +1916,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   let touchesGangRole = false;
   for (const id of watchedRoleIds) if (oldRoles.has(id) !== newRoles.has(id)) { touchesGangRole = true; break; }
   if (touchesGangRole) {
-    // Als de rang wijzigde kan mod-status veranderen
     await syncAutoModRole(newMember);
     scheduleUpdate();
   }
