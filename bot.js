@@ -32,6 +32,10 @@ if (!TOKEN) {
   process.exit(1);
 }
 
+// ===== Kleuren =====
+const EMBED_COLOR = 0x2ecc71;       // GSF groen
+const PORTO_COLOR = 0x3498db;       // GSF blauw (voor porto)
+
 // ===== Kanaal IDs =====
 const WELCOME_CHANNEL_ID = "1567269934747090979";
 const GANG_LIST_CHANNEL_ID = "1568002909243711488";
@@ -43,6 +47,8 @@ const ALL_LOGS_CHANNEL_ID = "1568004384602853536";
 const AFWEZIGHEID_CHANNEL_ID = "1567269935753990243";
 const AANGENOMEN_CHANNEL_ID = "1567901313168048198";
 const ONTSLAGEN_CHANNEL_ID = "1567901328305426542";
+const SOLICITATIE_STATUS_CHANNEL_ID = "1567899535861354618";
+const GANG_PORTO_CHANNEL_ID = "1567269935527366695";
 
 // ===== Ticket settings =====
 const TICKET_PANEL_CHANNEL_ID = "1567269934747090980";
@@ -66,21 +72,21 @@ const TICKET_CATEGORIES = {
   application: {
     name: "Sollicitatie",
     prefix: "sollicitatie",
-    categoryId: "1568009181795983412", // ⚠️ niet opgegeven in jouw lijst
+    categoryId: "1568009181795983412",
     emoji: "📝",
-    color: 0xf39c12,
+    color: EMBED_COLOR,
     isApplication: true,
   },
   partner: {
     name: "Partner",
     prefix: "partner",
-    categoryId: "1568009222833045645", // ⚠️ niet opgegeven in jouw lijst
+    categoryId: "1568009222833045645",
     emoji: "🤝",
-    color: 0xe91e63,
+    color: EMBED_COLOR,
   },
 };
 
-// ===== SIMPELERE SOLLICITATIE VRAGEN (3 KOPJES, FIVEM-FRIENDLY) =====
+// ===== SIMPELERE SOLLICITATIE VRAGEN =====
 const APPLICATION_PARTS = {
   part1: {
     title: "01 — Wie ben je?",
@@ -132,7 +138,7 @@ const LID_ROLE_ID = "1567269932918378602";
 const LID_NAME_PREFIX = "𝕲𝕾𝕱 | ";
 const PLACEHOLDER_IMAGE = "https://cdn.discordapp.com/attachments/1567554042039771136/1568002571287662792/gsf.webp?ex=6aee3bb1&is=6aecea31&hm=aee9006b8b0e2009a7a1f4ebb27196b322c71595483d771e285eab9286dbd691&";
 
-// ===== Nieuwe GSF rollen =====
+// ===== GSF rollen =====
 const ACTIEF_ROLE_ID = "1567269932918378607";
 const AFWEZIG_ROLE_ID = "1567269932918378601";
 
@@ -150,6 +156,32 @@ const ranks = [
 ];
 
 const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
+
+// ===== Sollicitatie status instellingen =====
+const SOLLICITATIE_STATUS_CONFIG = {
+  open:       { label: "Open",       circle: "🟢", color: 0x2ecc71, text: "Er is ruimte voor nieuwe sollicitaties." },
+  bijna_vol:  { label: "Bijna vol",  circle: "🟠", color: 0xe67e22, text: "Er is nog beperkt ruimte. Wees snel!" },
+  vol:        { label: "Vol",        circle: "🔴", color: 0xe74c3c, text: "We nemen momenteel geen nieuwe sollicitaties aan." },
+};
+
+let sollicitatieStatus = {
+  status: "open",
+  aantal: null,
+  max: null,
+  notitie: null,
+  updatedAt: Date.now(),
+  updatedBy: null,
+};
+
+let sollicitatieStatusMessageId = null;
+
+// ===== Gang porto =====
+let gangPorto = {
+  frequentie: "1",
+  updatedAt: Date.now(),
+  updatedBy: null,
+};
+let gangPortoMessageId = null;
 
 // ===== Helpers =====
 function getNumber(name) {
@@ -198,8 +230,8 @@ async function removeLidRole(member) {
   if (member.roles.cache.has(LID_ROLE_ID)) await member.roles.remove(LID_ROLE_ID);
 }
 
-// ===== Actief-rol sync: gangrol => actief, tenzij afwezig =====
-const afwezigUsers = new Map(); // userId -> { until, reason, from, til }
+// ===== Actief-rol sync =====
+const afwezigUsers = new Map();
 
 async function syncActiefRole(member) {
   try {
@@ -307,7 +339,7 @@ async function buildEmbed() {
     body += `\n`;
   }
   const description = `**Totaal: ${uniqueMembers.size} leden**\n\n${body}`;
-  return new EmbedBuilder().setTitle("🏴 GSF Ledenlijst").setColor(0x2b2b2b).setDescription(description.slice(0, 4096)).setFooter({ text: FOOTER_TEXT }).setTimestamp();
+  return new EmbedBuilder().setTitle("GSF Ledenlijst").setColor(EMBED_COLOR).setDescription(description.slice(0, 4096)).setFooter({ text: FOOTER_TEXT }).setTimestamp();
 }
 
 async function updateList() {
@@ -349,12 +381,10 @@ async function sendWelcomeMessage(member) {
         { name: "📊 Totaal aantal leden", value: `${memberCount}`, inline: true },
         { name: "📅 Datum", value: getCurrentDate(), inline: true }
       )
-      .setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+      .setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
     await channel.send({ embeds: [embed] });
   } catch (error) { console.error("Welcome message error:", error); }
 }
-
-// sendLeaveMessage verwijderd — leave kanaal moet weg
 
 async function sendPromoEmbed(guild, user, oldRank, newRank, reason) {
   const channel = await client.channels.fetch(PROMO_CHANNEL_ID);
@@ -365,7 +395,7 @@ async function sendPromoEmbed(guild, user, oldRank, newRank, reason) {
       { name: "🎯 Naar", value: newRank, inline: false },
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(getServerIcon(guild));
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(getServerIcon(guild));
   await channel.send({ embeds: [embed] });
 }
 
@@ -378,7 +408,7 @@ async function sendDemoteEmbed(guild, user, oldRank, newRank, reason) {
       { name: "⬇️ Naar", value: newRank, inline: false },
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(getServerIcon(guild));
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(getServerIcon(guild));
   await channel.send({ embeds: [embed] });
 }
 
@@ -391,7 +421,7 @@ async function sendWarnEmbed(user, warnLevel, reason) {
       { name: "⚠️ Niveau", value: warnLevel, inline: false },
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -404,7 +434,7 @@ async function sendRemoveWarnEmbed(user, warnLevel, reason) {
       { name: "⚠️ Niveau", value: warnLevel, inline: false },
       { name: "📝 Reden ingetrokken", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -417,7 +447,7 @@ async function sendAangenomenEmbed(guild, user, rank, reason) {
       { name: "🎯 Rang", value: rank, inline: false },
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -429,7 +459,7 @@ async function sendOntslagenEmbed(user, reason) {
     .addFields(
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -443,12 +473,9 @@ async function sendAfwezigheidEmbed(user, reason, fromDate, tilDate, untilMs) {
       { name: "📅 Vanaf", value: fromDate, inline: false },
       { name: "📅 Tot", value: tilDate, inline: false },
       { name: "📅 Gemeld op", value: getFullDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
-
-  // ⚠️ Bij afwezigheid wordt er NIET met { embeds: [embed] } gesproken? Wel, hier wel.
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 
-  // Zet afwezig-rol + verwijder actief
   if (untilMs && user.roles) {
     afwezigUsers.set(user.id, { until: untilMs, reason, from: fromDate, til: tilDate });
     await syncActiefRole(user);
@@ -464,7 +491,7 @@ async function sendMuteEmbed(user, minutes, reason) {
       { name: "⏱️ Duur", value: `${minutes} minuten`, inline: false },
       { name: "📝 Reden", value: reason, inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -476,7 +503,7 @@ async function sendUnmuteEmbed(user, reason) {
     .addFields(
       { name: "📝 Reden", value: reason || "Geen reden", inline: false },
       { name: "📅 Datum", value: getCurrentDate(), inline: false }
-    ).setColor(0xFFFFFF).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
+    ).setColor(EMBED_COLOR).setFooter({ text: FOOTER_TEXT }).setTimestamp().setThumbnail(userAvatar);
   await channel.send({ embeds: [embed] });
 }
 
@@ -489,7 +516,7 @@ async function sendSollicitatieFormulier(interaction) {
       "Vul alle vragen **eerlijk en volledig** in. We verwachten serieuze antwoorden en respect voor onze gang.\n\n" +
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
-    .setColor(0x8B0000).setThumbnail(getServerIcon(guild))
+    .setColor(EMBED_COLOR).setThumbnail(getServerIcon(guild))
     .addFields(
       { name: "**01 — Wie ben je?**", value: "> **Naam:**\n> **Leeftijd:**\n> **Discord:**\n> **IC-naam:**", inline: false },
       { name: "**02 — Ervaring**", value: "> **Ervaring met FiveM/Serious RP:**\n> **Hoeveel uur per dag actief?**", inline: false },
@@ -501,7 +528,7 @@ async function sendSollicitatieFormulier(interaction) {
 }
 
 // ========================================
-// 🚫 BLACKLIST SYSTEEM (GitHub Gist DB)
+// 🚫 BLACKLIST + DB (GitHub Gist)
 // ========================================
 
 const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null;
@@ -510,9 +537,9 @@ let blacklistCache = {};
 let blacklistMessageId = null;
 let blacklistLoaded = false;
 
-async function loadBlacklist() {
+async function loadData() {
   if (!octokit) {
-    console.warn("⚠️ Geen GITHUB_TOKEN — blacklist werkt niet persistent.");
+    console.warn("⚠️ Geen GITHUB_TOKEN — database werkt niet persistent.");
     blacklistLoaded = true;
     return;
   }
@@ -520,9 +547,9 @@ async function loadBlacklist() {
   try {
     if (!GIST_ID) {
       const { data } = await octokit.gists.create({
-        description: "GSF Bot — Blacklist Database",
+        description: "GSF Bot — Database",
         public: false,
-        files: { [GIST_FILENAME]: { content: JSON.stringify({}, null, 2) } },
+        files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, sollicitatiestatus: null, gangporto: null }, null, 2) } },
       });
       GIST_ID = data.id;
       console.log(`⚠️ Nieuwe Gist aangemaakt. Zet dit in je env: GIST_ID=${GIST_ID}`);
@@ -533,7 +560,16 @@ async function loadBlacklist() {
 
     const { data } = await octokit.gists.get({ gist_id: GIST_ID });
     const content = data.files[GIST_FILENAME]?.content || "{}";
-    blacklistCache = JSON.parse(content);
+    const parsed = JSON.parse(content);
+
+    // Backwards compat
+    if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("sollicitatiestatus" in parsed) && !("gangporto" in parsed)) {
+      blacklistCache = parsed;
+    } else {
+      blacklistCache = parsed.blacklist || {};
+      if (parsed.sollicitatiestatus) sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
+      if (parsed.gangporto) gangPorto = { ...gangPorto, ...parsed.gangporto };
+    }
 
     const now = Date.now();
     let changed = false;
@@ -543,39 +579,45 @@ async function loadBlacklist() {
         changed = true;
       }
     }
-    if (changed) await saveBlacklist();
+    if (changed) await saveData();
     blacklistLoaded = true;
-    console.log(`✅ Blacklist geladen: ${Object.keys(blacklistCache).length} entries`);
+    console.log(`✅ Data geladen: ${Object.keys(blacklistCache).length} blacklist entries, porto = ${gangPorto.frequentie}`);
   } catch (err) {
-    console.error("❌ Blacklist load error:", err.message);
+    console.error("❌ Load error:", err.message);
     blacklistLoaded = true;
   }
 }
 
-async function saveBlacklist() {
+async function saveData() {
   if (!octokit || !GIST_ID) return false;
   try {
     await octokit.gists.update({
       gist_id: GIST_ID,
       files: {
         [GIST_FILENAME]: {
-          content: JSON.stringify(blacklistCache, null, 2),
+          content: JSON.stringify({
+            blacklist: blacklistCache,
+            sollicitatiestatus: sollicitatieStatus,
+            gangporto: gangPorto,
+          }, null, 2),
         },
       },
     });
     return true;
   } catch (err) {
-    console.error("❌ Blacklist save error:", err.message);
+    console.error("❌ Save error:", err.message);
     return false;
   }
 }
+
+const saveBlacklist = saveData;
 
 function isBlacklisted(userId) {
   const entry = blacklistCache[userId];
   if (!entry) return false;
   if (entry.expiresAt && entry.expiresAt < Date.now()) {
     delete blacklistCache[userId];
-    saveBlacklist().catch(() => {});
+    saveData().catch(() => {});
     return false;
   }
   return true;
@@ -614,7 +656,6 @@ function formatBlacklistExpiry(entry) {
 
 async function buildBlacklistEmbed() {
   const entries = Object.entries(blacklistCache).filter(([_, e]) => !e.expiresAt || e.expiresAt > Date.now());
-
   entries.sort((a, b) => {
     const aPerm = !a[1].expiresAt;
     const bPerm = !b[1].expiresAt;
@@ -640,7 +681,7 @@ async function buildBlacklistEmbed() {
   const description = `**Totaal: ${entries.length} geblacklist**\n\n${body}`;
   return new EmbedBuilder()
     .setTitle("🚫 GSF Blacklist")
-    .setColor(0x8B0000)
+    .setColor(EMBED_COLOR)
     .setDescription(description.slice(0, 4096))
     .setFooter({ text: FOOTER_TEXT })
     .setTimestamp();
@@ -683,7 +724,7 @@ async function addToBlacklist(userId, username, durationMs, reason, addedBy) {
     addedAt: Date.now(),
     expiresAt: durationMs ? Date.now() + durationMs : null,
   };
-  const ok = await saveBlacklist();
+  const ok = await saveData();
   await updateBlacklistEmbed();
   return ok;
 }
@@ -691,7 +732,7 @@ async function addToBlacklist(userId, username, durationMs, reason, addedBy) {
 async function removeFromBlacklist(userId) {
   if (!blacklistCache[userId]) return false;
   delete blacklistCache[userId];
-  await saveBlacklist();
+  await saveData();
   await updateBlacklistEmbed();
   return true;
 }
@@ -706,7 +747,7 @@ function startBlacklistInterval() {
         changed = true;
       }
     }
-    if (changed) await saveBlacklist();
+    if (changed) await saveData();
     await updateBlacklistEmbed();
   }, 60_000);
 }
@@ -737,7 +778,6 @@ async function handleBlacklist(interaction) {
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   const ok = await addToBlacklist(targetUser.id, targetUser.username, durationMs, reason, interaction.user.id);
 
   if (ok) {
@@ -752,16 +792,11 @@ async function handleUnblacklist(interaction) {
   if (!hasModRole(interaction.member)) {
     return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
   }
-
   const targetUser = interaction.options.getUser("user");
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   const ok = await removeFromBlacklist(targetUser.id);
-  if (ok) {
-    await interaction.editReply({ content: `✅ ${targetUser.username} is van de blacklist gehaald.` });
-  } else {
-    await interaction.editReply({ content: `❌ ${targetUser.username} staat niet op de blacklist.` });
-  }
+  if (ok) await interaction.editReply({ content: `✅ ${targetUser.username} is van de blacklist gehaald.` });
+  else await interaction.editReply({ content: `❌ ${targetUser.username} staat niet op de blacklist.` });
 }
 
 // ===== Mute system =====
@@ -810,6 +845,78 @@ async function removeMute(member, reason = "Handmatig") {
     }
     return true;
   } catch (error) { console.error("Unmute error:", error); return false; }
+}
+
+// ========================================
+// 📻 GANG PORTO
+// ========================================
+
+function buildPortoEmbed() {
+  return new EmbedBuilder()
+    .setTitle("📻 GSF Gang Porto")
+    .setColor(PORTO_COLOR)
+    .setDescription(
+      "**Huidige frequentie**\n" +
+      "```" + gangPorto.frequentie + "```\n" +
+      "Klik op het kopieer-icoontje rechtsboven het vak om de frequentie te kopiëren.\n\n" +
+      "**Regels**\n" +
+      "> 1. Deel de porto **nooit** met iemand buiten de gang.\n" +
+      "> 2. **Iedereen** met een gang-rol moet in de porto zitten.\n" +
+      "> 3. Verander de frequentie alleen via een staff-lid met `/portochange`.\n\n" +
+      "Laatst gewijzigd: <t:" + Math.floor(gangPorto.updatedAt / 1000) + ":R>"
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
+}
+
+async function updatePortoEmbed() {
+  try {
+    const channel = await client.channels.fetch(GANG_PORTO_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+    const payload = { embeds: [buildPortoEmbed()], allowedMentions: { parse: [] } };
+
+    if (gangPortoMessageId) {
+      try {
+        const msg = await channel.messages.fetch(gangPortoMessageId);
+        await msg.edit(payload);
+        return;
+      } catch { gangPortoMessageId = null; }
+    }
+
+    try {
+      const fetched = await channel.messages.fetch({ limit: 50 });
+      const botMsgs = fetched.filter(m => m.author.id === client.user.id);
+      for (const m of botMsgs.values()) await m.delete().catch(() => {});
+    } catch {}
+
+    const sent = await channel.send(payload);
+    gangPortoMessageId = sent.id;
+  } catch (err) {
+    console.error("Porto embed error:", err.message);
+  }
+}
+
+async function handlePortoChange(interaction) {
+  if (!hasModRole(interaction.member)) {
+    return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  }
+
+  const freqRaw = interaction.options.getString("frequentie").trim();
+  // Alleen cijfers en maximaal 8 tekens toestaan
+  if (!/^\d{1,8}$/.test(freqRaw)) {
+    return interaction.reply({ content: "❌ Gebruik alleen cijfers (max 8), bijv. `123` of `4567`.", flags: MessageFlags.Ephemeral });
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  gangPorto.frequentie = freqRaw;
+  gangPorto.updatedAt = Date.now();
+  gangPorto.updatedBy = interaction.user.id;
+
+  await saveData();
+  await updatePortoEmbed();
+
+  await interaction.editReply({ content: `✅ Porto aangepast naar **${freqRaw}**.` });
 }
 
 // ========================================
@@ -949,7 +1056,7 @@ async function closeTicket(channel, closerId) {
     const cat = TICKET_CATEGORIES[ticket.category];
     const embed = new EmbedBuilder()
       .setTitle('Ticket Transcript')
-      .setColor(cat ? cat.color : 0x5865f2)
+      .setColor(EMBED_COLOR)
       .addFields(
         { name: 'Kanaal', value: `#${channel.name}`, inline: true },
         { name: 'Klant', value: `<@${ticket.userId}>`, inline: true },
@@ -980,7 +1087,7 @@ async function closeTicket(channel, closerId) {
 function buildTicketPanelEmbed() {
   return new EmbedBuilder()
     .setTitle('🎫 Tickets')
-    .setColor(0x5865f2)
+    .setColor(EMBED_COLOR)
     .setDescription('Kies hieronder een categorie om een ticket te openen.\n\n> 📝 **Sollicitatie** — Solliciteer bij GSF\n> 🤝 **Partner** — Vraag een partnership aan')
     .setFooter({ text: FOOTER_TEXT })
     .setTimestamp();
@@ -1016,7 +1123,7 @@ async function setupTicketPanel() {
 function buildApplicationStartEmbed() {
   return new EmbedBuilder()
     .setTitle('📝 Sollicitatie Formulier')
-    .setColor(0xf39c12)
+    .setColor(EMBED_COLOR)
     .setDescription(
       'Welkom bij je sollicitatie voor **GSF**!\n\n' +
       'Vul de 3 delen in door op de knoppen hieronder te klikken.\n\n' +
@@ -1075,7 +1182,7 @@ function buildFinalApplicationEmbed(userId, answers) {
 
   return new EmbedBuilder()
     .setTitle('📝 Sollicitatie Ingevuld')
-    .setColor(0xf39c12)
+    .setColor(EMBED_COLOR)
     .setDescription(`<@${userId}> heeft de sollicitatie volledig ingevuld.`)
     .addFields(
       { name: '👤 01 — Wie ben je?', value: `**Naam:** ${p1.naam || '-'}\n**Leeftijd:** ${p1.leeftijd || '-'}\n**Discord:** ${p1.discord || '-'}\n**IC Naam:** ${p1.ic_naam || '-'}`, inline: false },
@@ -1117,7 +1224,7 @@ async function setupCommandsEmbed() {
 
     const embed = new EmbedBuilder()
       .setTitle('📚 Bot Commands Overzicht')
-      .setColor(0x2b2b2b)
+      .setColor(EMBED_COLOR)
       .setDescription('Hieronder vind je een overzicht van alle beschikbare commands voor de GSF bot.')
       .addFields(
         {
@@ -1139,14 +1246,15 @@ async function setupCommandsEmbed() {
             '**`/ontslagen <user> <reden>`** — Ontsla een lid\n' +
             '**`/warn <nummer> <user> <reden>`** — Geef een waarschuwing\n' +
             '**`/removewarn <nummer> <user> <reden>`** — Trek een waarschuwing in\n' +
-            '**`/blacklist <user> <reden> [duur]`** — Blacklist een gebruiker (leeg = permanent)\n' +
-            '**`/unblacklist <user>`** — Haal van de blacklist',
+            '**`/blacklist <user> <reden> [duur]`** — Blacklist een gebruiker\n' +
+            '**`/unblacklist <user>`** — Haal van de blacklist\n' +
+            '**`/portochange <frequentie>`** — Wijzig de gang porto',
           inline: false
         },
         {
           name: '🎫 Ticket Beheer',
           value:
-            '**`/ticketpanel`** — Plaats het ticket paneel (Mods)\n' +
+            '**`/ticketpanel`** — Plaats het ticket paneel\n' +
             '**`/add <user>`** — Voeg een user toe aan ticket\n' +
             '**`/remove <user>`** — Verwijder een user uit ticket\n' +
             '**`/close`** — Sluit het ticket\n' +
@@ -1195,6 +1303,10 @@ async function registerCommands() {
       .setName("unblacklist")
       .setDescription("Haal een gebruiker van de blacklist")
       .addUserOption(o => o.setName("user").setDescription("Gebruiker").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("portochange")
+      .setDescription("Wijzig de gang porto frequentie")
+      .addStringOption(o => o.setName("frequentie").setDescription("Nieuwe frequentie (alleen cijfers)").setRequired(true)),
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -1217,7 +1329,7 @@ async function handlePromote(interaction) {
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const currentLevel = getCurrentRankLevel(targetMember);
   if (currentLevel === 0) return interaction.reply({ content: `❌ ${targetUser.username} heeft geen gang rol!`, flags: MessageFlags.Ephemeral });
-  let newLevel = Math.min(currentLevel + steps, 9);
+  let newLevel = Math.min(currentLevel + steps, 8);
   if (newLevel === currentLevel) return interaction.reply({ content: `❌ Al hoogste rang!`, flags: MessageFlags.Ephemeral });
   const newRole = interaction.guild.roles.cache.get(getRoleIdByLevel(newLevel));
   try {
@@ -1340,12 +1452,9 @@ async function handleAfwezigheid(interaction) {
   const fromDate = interaction.options.getString("from");
   const tilDate = interaction.options.getString("til");
 
-  // Zet de "tot"-datum om naar een timestamp (einde van die dag)
   let untilMs = null;
   const parsed = Date.parse(tilDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
-  if (!isNaN(parsed)) {
-    untilMs = parsed + 86_400_000; // einde van de dag
-  }
+  if (!isNaN(parsed)) untilMs = parsed + 86_400_000;
 
   const member = await interaction.guild.members.fetch(interaction.user.id);
   await sendAfwezigheidEmbed(member, reason, fromDate, tilDate, untilMs);
@@ -1467,7 +1576,7 @@ async function handleTicketCategorySelect(interaction) {
 
     const embed = new EmbedBuilder()
       .setTitle(cat.name)
-      .setColor(cat.color)
+      .setColor(EMBED_COLOR)
       .setDescription(`<@${interaction.user.id}> — beschrijf hieronder je vraag.`)
       .setFooter({ text: FOOTER_TEXT })
       .setTimestamp();
@@ -1562,7 +1671,6 @@ async function handleApplicationModalSubmit(interaction, partKey) {
 
 async function handleAppAccept(interaction, userId) {
   if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
-
   await interaction.reply({
     content: "Kies de rang voor deze gebruiker in het dropdown menu hieronder:",
     components: [buildRankSelectMenu(userId)],
@@ -1572,25 +1680,19 @@ async function handleAppAccept(interaction, userId) {
 
 async function handleAppReject(interaction, userId) {
   if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
-
   await interaction.update({ components: [] });
-
   const targetUser = await client.users.fetch(userId).catch(() => null);
-
   if (targetUser) {
     await sendOntslagenEmbed(targetUser, "Sollicitatie afgewezen");
-
     try {
       await targetUser.send({ content: `❌ Je sollicitatie bij **GSF** is helaas afgewezen.\nReden: Sollicitatie afgewezen` });
     } catch (err) {}
   }
-
   await interaction.channel.send({ content: `❌ Sollicitatie van <@${userId}> is afgewezen door <@${interaction.user.id}>.` });
 }
 
 async function handleAppRankSelect(interaction, userId) {
   if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
-
   if (isBlacklisted(userId)) {
     return interaction.reply({ content: `❌ <@${userId}> staat op de blacklist en kan niet aangenomen worden.`, ephemeral: true });
   }
@@ -1598,7 +1700,6 @@ async function handleAppRankSelect(interaction, userId) {
   await interaction.deferUpdate();
   const roleId = interaction.values[0];
   const rank = ranks.find(r => r.roleId === roleId);
-
   if (!rank) return;
 
   const reason = "Sollicitatie/Overstap";
@@ -1616,7 +1717,6 @@ async function handleAppRankSelect(interaction, userId) {
     await syncActiefRole(targetMember);
 
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
-
     await safeUpdateList();
 
     try {
@@ -1736,8 +1836,9 @@ client.once("ready", async () => {
   await setupTicketPanel();
   await setupCommandsEmbed();
 
-  await loadBlacklist();
+  await loadData();
   await updateBlacklistEmbed();
+  await updatePortoEmbed();
   startBlacklistInterval();
 
   startStatusInterval();
@@ -1747,7 +1848,6 @@ client.on("guildMemberAdd", async (member) => {
   await sendWelcomeMessage(member);
 });
 
-// Leave-bericht verwijderd — kanaal weg
 client.on("guildMemberRemove", async (member) => {
   const hasGang = [...member.roles.cache.keys()].some(id => watchedRoleIds.has(id));
   if (hasGang) scheduleUpdate();
@@ -1759,7 +1859,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   const hasLid = newMember.roles.cache.has(LID_ROLE_ID);
   if (hadLid !== hasLid) await applyLidPrefix(newMember);
 
-  // Sync actief-rol als gangrollen zijn gewijzigd
   const oldGang = ranks.some(r => oldMember.roles.cache.has(r.roleId));
   const newGang = ranks.some(r => newMember.roles.cache.has(r.roleId));
   if (oldGang !== newGang) await syncActiefRole(newMember);
@@ -1846,6 +1945,7 @@ client.on("interactionCreate", async (interaction) => {
     else if (name === "ticketpanel") await handleTicketPanel(interaction);
     else if (name === "blacklist") await handleBlacklist(interaction);
     else if (name === "unblacklist") await handleUnblacklist(interaction);
+    else if (name === "portochange") await handlePortoChange(interaction);
     return;
   }
 });
