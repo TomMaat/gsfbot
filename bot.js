@@ -169,10 +169,12 @@ const SOLLICITATIE_STATUS_CONFIG = {
   vol:        { label: "Vol",        circle: "🔴", color: 0xe74c3c, text: "We nemen momenteel geen nieuwe sollicitaties aan." },
 };
 
+const DEFAULT_MAX_LEDEN = 30;
+
 let sollicitatieStatus = {
   status: "open",
-  aantal: null,
-  max: null,
+  aantal: 0,
+  max: DEFAULT_MAX_LEDEN,
   notitie: null,
   updatedAt: Date.now(),
   updatedBy: null,
@@ -611,7 +613,11 @@ async function loadData() {
       blacklistCache = parsed;
     } else {
       blacklistCache = parsed.blacklist || {};
-      if (parsed.sollicitatiestatus) sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
+      if (parsed.sollicitatiestatus) {
+        sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
+        if (sollicitatieStatus.max === null || sollicitatieStatus.max === undefined) sollicitatieStatus.max = DEFAULT_MAX_LEDEN;
+        if (sollicitatieStatus.aantal === null || sollicitatieStatus.aantal === undefined) sollicitatieStatus.aantal = 0;
+      }
       if (parsed.gangporto) gangPorto = { ...gangPorto, ...parsed.gangporto };
       if (parsed.afwezig) {
         for (const [userId, entry] of Object.entries(parsed.afwezig)) {
@@ -983,15 +989,23 @@ async function handlePortoChange(interaction) {
 // 📝 SOLLICITATIE STATUS DISPLAY
 // ========================================
 function buildSollicitatieStatusEmbed() {
-  const cfg = SOLLICITATIE_STATUS_CONFIG[sollicitatieStatus.status] || SOLLICITATIE_STATUS_CONFIG.open;
+  const current = sollicitatieStatus.status;
+  const max = sollicitatieStatus.max ?? DEFAULT_MAX_LEDEN;
+  const aantal = sollicitatieStatus.aantal ?? 0;
 
-  let desc = `**Huidige status**\n${cfg.circle} **${cfg.label}**\n\n${cfg.text}`;
+  // Status-lijst: alle 3 de bolletjes met betekenis, actieve is vet
+  const statusLines = Object.entries(SOLLICITATIE_STATUS_CONFIG).map(([key, cfg]) => {
+    const isCurrent = key === current;
+    const label = isCurrent ? `**${cfg.label}**` : cfg.label;
+    return `${cfg.circle} ${label} — ${cfg.text}`;
+  }).join("\n");
 
-  if (sollicitatieStatus.aantal !== null || sollicitatieStatus.max !== null) {
-    const a = sollicitatieStatus.aantal ?? "?";
-    const m = sollicitatieStatus.max ?? "?";
-    desc += `\n\n**Plaatsen:** ${a} / ${m}`;
-  }
+  let desc =
+    `**Huidige status**\n` +
+    `${SOLLICITATIE_STATUS_CONFIG[current].circle} **${SOLLICITATIE_STATUS_CONFIG[current].label}**\n\n` +
+    `**Plaatsen:** ${aantal} / ${max} leden\n\n` +
+    `**Statussen**\n${statusLines}`;
+
   if (sollicitatieStatus.notitie) {
     desc += `\n\n**Notitie:** ${sollicitatieStatus.notitie}`;
   }
@@ -1049,9 +1063,9 @@ async function handleSollicitatieStatus(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   sollicitatieStatus.status = status;
-  sollicitatieStatus.aantal = aantal ?? sollicitatieStatus.aantal;
-  sollicitatieStatus.max = max ?? sollicitatieStatus.max;
-  sollicitatieStatus.notitie = notitie ?? sollicitatieStatus.notitie;
+  if (aantal !== null && aantal !== undefined) sollicitatieStatus.aantal = aantal;
+  if (max !== null && max !== undefined) sollicitatieStatus.max = max;
+  if (notitie !== null && notitie !== undefined) sollicitatieStatus.notitie = notitie;
   sollicitatieStatus.updatedAt = Date.now();
   sollicitatieStatus.updatedBy = interaction.user.id;
 
@@ -1658,7 +1672,7 @@ async function registerCommands() {
           { name: "🔴 Vol", value: "vol" },
         ))
       .addIntegerOption(o => o.setName("aantal").setDescription("Aantal huidige sollicitaties").setRequired(false).setMinValue(0))
-      .addIntegerOption(o => o.setName("max").setDescription("Maximaal aantal plaatsen").setRequired(false).setMinValue(0))
+      .addIntegerOption(o => o.setName("max").setDescription("Maximaal aantal leden (standaard 30)").setRequired(false).setMinValue(1))
       .addStringOption(o => o.setName("notitie").setDescription("Extra notitie").setRequired(false)),
   ].map(cmd => cmd.toJSON());
 
