@@ -66,7 +66,7 @@ const TICKET_CATEGORIES = {
   application: {
     name: "Sollicitatie",
     prefix: "sollicitatie",
-    categoryId: "1565753071315845371", // ⚠️ niet opgegeven in jouw lijst
+    categoryId: "1568009181795983412", // ⚠️ niet opgegeven in jouw lijst
     emoji: "📝",
     color: 0xf39c12,
     isApplication: true,
@@ -74,7 +74,7 @@ const TICKET_CATEGORIES = {
   partner: {
     name: "Partner",
     prefix: "partner",
-    categoryId: "1565753161342525460", // ⚠️ niet opgegeven in jouw lijst
+    categoryId: "1568009222833045645", // ⚠️ niet opgegeven in jouw lijst
     emoji: "🤝",
     color: 0xe91e63,
   },
