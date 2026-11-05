@@ -142,7 +142,7 @@ const PLACEHOLDER_IMAGE = "https://cdn.discordapp.com/attachments/15675540420397
 const ACTIEF_ROLE_ID = "1567269932918378607";
 const AFWEZIG_ROLE_ID = "1567269932918378601";
 
-const FOOTER_TEXT = "GSF • Arnhem Roleplay";
+const FOOTER_TEXT = "GSF • Den Haag Roleplay";
 
 const ranks = [
   { name: "Big Brother", roleId: "1567269932989816879", level: 8, emoji: "👑" },
@@ -528,7 +528,7 @@ async function sendSollicitatieFormulier(interaction) {
 }
 
 // ========================================
-// 🚫 BLACKLIST + DB (GitHub Gist)
+// 🚫 DB (GitHub Gist): blacklist + sollicitatiestatus + gangporto
 // ========================================
 
 const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null;
@@ -589,7 +589,10 @@ async function loadData() {
 }
 
 async function saveData() {
-  if (!octokit || !GIST_ID) return false;
+  if (!octokit || !GIST_ID) {
+    console.warn("⚠️ Kan niet opslaan: geen GITHUB_TOKEN of GIST_ID.");
+    return false;
+  }
   try {
     await octokit.gists.update({
       gist_id: GIST_ID,
@@ -858,7 +861,6 @@ function buildPortoEmbed() {
     .setDescription(
       "**Huidige frequentie**\n" +
       "```" + gangPorto.frequentie + "```\n" +
-      "Klik op het kopieer-icoontje rechtsboven het vak om de frequentie te kopiëren.\n\n" +
       "**Regels**\n" +
       "> 1. Deel de porto **nooit** met iemand buiten de gang.\n" +
       "> 2. **Iedereen** met een gang-rol moet in de porto zitten.\n" +
@@ -902,7 +904,6 @@ async function handlePortoChange(interaction) {
   }
 
   const freqRaw = interaction.options.getString("frequentie").trim();
-  // Alleen cijfers en maximaal 8 tekens toestaan
   if (!/^\d{1,8}$/.test(freqRaw)) {
     return interaction.reply({ content: "❌ Gebruik alleen cijfers (max 8), bijv. `123` of `4567`.", flags: MessageFlags.Ephemeral });
   }
@@ -913,10 +914,14 @@ async function handlePortoChange(interaction) {
   gangPorto.updatedAt = Date.now();
   gangPorto.updatedBy = interaction.user.id;
 
-  await saveData();
+  const saved = await saveData();
   await updatePortoEmbed();
 
-  await interaction.editReply({ content: `✅ Porto aangepast naar **${freqRaw}**.` });
+  if (saved) {
+    await interaction.editReply({ content: `✅ Porto aangepast naar **${freqRaw}** en opgeslagen.` });
+  } else {
+    await interaction.editReply({ content: `⚠️ Porto aangepast naar **${freqRaw}** in geheugen, maar opslaan naar Gist mislukt.` });
+  }
 }
 
 // ========================================
