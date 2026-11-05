@@ -857,7 +857,7 @@ async function removeMute(member, reason = "Handmatig") {
 function buildPortoEmbed() {
   return new EmbedBuilder()
     .setTitle("📻 GSF Gang Porto")
-    .setColor(PORTO_COLOR)
+    .setColor(EMBED_COLOR)
     .setDescription(
       "**Huidige frequentie**\n" +
       "```" + gangPorto.frequentie + "```\n" +
