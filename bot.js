@@ -34,7 +34,6 @@ if (!TOKEN) {
 
 // ===== Kleuren =====
 const EMBED_COLOR = 0x2ecc71;       // GSF groen
-const PORTO_COLOR = 0x3498db;       // GSF blauw (voor porto)
 
 // ===== Kanaal IDs =====
 const WELCOME_CHANNEL_ID = "1567269934747090979";
@@ -157,6 +156,9 @@ const ranks = [
 
 const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
 
+// ===== Auto MOD/ADMIN =====
+const AUTO_MOD_MIN_LEVEL = 7; // Chief Enforcer en hoger
+
 // ===== Sollicitatie status instellingen =====
 const SOLLICITATIE_STATUS_CONFIG = {
   open:       { label: "Open",       circle: "🟢", color: 0x2ecc71, text: "Er is ruimte voor nieuwe sollicitaties." },
@@ -218,6 +220,24 @@ function getCurrentRankLevel(member) {
 
 function hasGangRole(member) {
   return ranks.some(r => member.roles.cache.has(r.roleId));
+}
+
+function shouldHaveAutoMod(member) {
+  return getCurrentRankLevel(member) >= AUTO_MOD_MIN_LEVEL;
+}
+
+async function syncAutoModRole(member) {
+  try {
+    if (member.user.bot) return;
+    const should = shouldHaveAutoMod(member);
+    const has = member.roles.cache.has(MOD_ROLE_ID);
+
+    if (should && !has) {
+      await member.roles.add(MOD_ROLE_ID, "Automatisch: rang Chief Enforcer of hoger");
+    } else if (!should && has) {
+      await member.roles.remove(MOD_ROLE_ID, "Automatisch: rang onder Chief Enforcer");
+    }
+  } catch (err) { console.error("syncAutoModRole error:", err); }
 }
 
 async function removeAllGangRoles(member) {
@@ -562,7 +582,6 @@ async function loadData() {
     const content = data.files[GIST_FILENAME]?.content || "{}";
     const parsed = JSON.parse(content);
 
-    // Backwards compat
     if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("sollicitatiestatus" in parsed) && !("gangporto" in parsed)) {
       blacklistCache = parsed;
     } else {
@@ -864,7 +883,7 @@ function buildPortoEmbed() {
       "**Regels**\n" +
       "> 1. Deel de porto **nooit** met iemand buiten de gang.\n" +
       "> 2. **Iedereen** met een gang-rol moet in de porto zitten.\n" +
-      "> 3. Verander de frequentie alleen via een staff-lid met `/portochange`.\n\n" +
+      "> 3. Verander de frequentie met `/portochange`.\n\n" +
       "Laatst gewijzigd: <t:" + Math.floor(gangPorto.updatedAt / 1000) + ":R>"
     )
     .setFooter({ text: FOOTER_TEXT })
@@ -1341,6 +1360,7 @@ async function handlePromote(interaction) {
     await removeAllGangRoles(targetMember);
     await targetMember.roles.add(newRole);
     await syncActiefRole(targetMember);
+    await syncAutoModRole(targetMember);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendPromoEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
@@ -1363,6 +1383,7 @@ async function handleDemote(interaction) {
     await removeAllGangRoles(targetMember);
     await targetMember.roles.add(newRole);
     await syncActiefRole(targetMember);
+    await syncAutoModRole(targetMember);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendDemoteEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
@@ -1418,6 +1439,7 @@ async function handleAangenomen(interaction) {
     await targetMember.roles.add(interaction.guild.roles.cache.get(rank.roleId));
     await targetMember.roles.add(interaction.guild.roles.cache.get(LID_ROLE_ID));
     await syncActiefRole(targetMember);
+    await syncAutoModRole(targetMember);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
@@ -1439,6 +1461,7 @@ async function handleOntslagen(interaction) {
     await removeAllGangRoles(targetMember);
     await removeLidRole(targetMember);
     await syncActiefRole(targetMember);
+    await syncAutoModRole(targetMember);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendOntslagenEmbed(targetMember, reason);
     await safeUpdateList();
@@ -1720,6 +1743,7 @@ async function handleAppRankSelect(interaction, userId) {
     await targetMember.roles.add(interaction.guild.roles.cache.get(rank.roleId));
     await targetMember.roles.add(interaction.guild.roles.cache.get(LID_ROLE_ID));
     await syncActiefRole(targetMember);
+    await syncAutoModRole(targetMember);
 
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
@@ -1832,6 +1856,7 @@ client.once("ready", async () => {
         if (member.user.bot) continue;
         await applyLidPrefix(member);
         await syncActiefRole(member);
+        await syncAutoModRole(member);
       }
     }
   } catch (err) { console.error("Ready error:", err); }
@@ -1866,7 +1891,10 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   const oldGang = ranks.some(r => oldMember.roles.cache.has(r.roleId));
   const newGang = ranks.some(r => newMember.roles.cache.has(r.roleId));
-  if (oldGang !== newGang) await syncActiefRole(newMember);
+  if (oldGang !== newGang) {
+    await syncActiefRole(newMember);
+    await syncAutoModRole(newMember);
+  }
 
   const oldRoles = new Set(oldMember.roles.cache.keys());
   const newRoles = new Set(newMember.roles.cache.keys());
@@ -1876,7 +1904,11 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (!changed) return;
   let touchesGangRole = false;
   for (const id of watchedRoleIds) if (oldRoles.has(id) !== newRoles.has(id)) { touchesGangRole = true; break; }
-  if (touchesGangRole) scheduleUpdate();
+  if (touchesGangRole) {
+    // Als de rang wijzigde kan mod-status veranderen
+    await syncAutoModRole(newMember);
+    scheduleUpdate();
+  }
 });
 
 // Afwezig-verloop check elke minuut
