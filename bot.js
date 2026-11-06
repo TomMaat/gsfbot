@@ -71,7 +71,6 @@ const GIST_FILENAME = "gsf.json";
 // ===== Overige settings =====
 const ROLE_CHANGE_DEBOUNCE_MS = 2000;
 
-// ===== Gang max =====
 const DEFAULT_MAX_GANG_LEDEN = 30;
 let maxGangLeden = DEFAULT_MAX_GANG_LEDEN;
 
@@ -230,6 +229,20 @@ function dutchDateToMs(dateObj) {
   return new Date(dateObj.year, dateObj.month - 1, dateObj.day, 23, 59, 59, 999).getTime();
 }
 
+// Duur formatteren: "2d 5u 12m"
+function formatRemaining(ms) {
+  if (ms <= 0) return "verlopen";
+  const totalSec = Math.floor(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}u`);
+  if (m > 0) parts.push(`${m}m`);
+  return parts.join(" ") || "< 1m";
+}
+
 function hasAdminRole(member) { return member.roles.cache.has(ADMIN_ROLE_ID); }
 function hasModRole(member) { return member.roles.cache.has(MOD_ROLE_ID) || member.roles.cache.has(ADMIN_ROLE_ID); }
 function getRoleIdByLevel(level) { const r = ranks.find(r => r.level === level); return r ? r.roleId : null; }
@@ -274,9 +287,6 @@ async function removeLidRole(member) {
   if (member.roles.cache.has(LID_ROLE_ID)) await member.roles.remove(LID_ROLE_ID);
 }
 
-// ===== AFWEZIGHEID ROL SYNC =====
-// Afwezig → actief weg, non-actief aan
-// Aanwezig → non-actief weg, actief aan
 async function syncActiefRole(member) {
   try {
     if (member.user.bot) return;
@@ -1140,8 +1150,12 @@ function buildNonActiefEmbed() {
   if (entries.length === 0) {
     body = "> Momenteel is niemand non-actief.";
   } else {
+    const now = Date.now();
+    entries.sort((a, b) => a[1].untilMs - b[1].untilMs);
     for (const [userId, entry] of entries) {
+      const remaining = formatRemaining(entry.untilMs - now);
       body += `<@${userId}> — ${entry.reason}\n`;
+      body += `➤ Nog: **${remaining}** (tot ${entry.tilDate})\n\n`;
     }
   }
   return new EmbedBuilder()
@@ -1213,15 +1227,19 @@ async function setupAfwezigPanel() {
   try {
     const channel = await client.channels.fetch(AFWEZIGHEID_CHANNEL_ID);
     if (!channel || !channel.isTextBased()) return;
-    try {
-      const fetched = await channel.messages.fetch({ limit: 50 });
-      const botMsgs = fetched.filter(m => m.author.id === client.user.id);
-      for (const m of botMsgs.values()) await m.delete().catch(() => {});
-    } catch {}
+
+    // Verwijder ALLEEN het oude panel-bericht (niet de afwezigheids-embeds!)
+    if (afwezigPanelMessageId) {
+      try {
+        const old = await channel.messages.fetch(afwezigPanelMessageId);
+        await old.delete().catch(() => {});
+      } catch {}
+      afwezigPanelMessageId = null;
+    }
 
     const sent = await channel.send({ embeds: [buildAfwezigPanelEmbed()], components: [buildAfwezigPanelButton()] });
     afwezigPanelMessageId = sent.id;
-    console.log("✅ Afwezigheid panel geplaatst");
+    console.log("✅ Afwezigheid panel (opnieuw) geplaatst");
   } catch (e) {
     console.error("Afwezig panel error:", e.message);
   }
@@ -1264,7 +1282,6 @@ function buildAfwezigModal() {
   return modal;
 }
 
-// Centrale functie voor afwezig melden (wordt gebruikt door /afwezig én modal)
 async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
   const fromParsed = parseDutchDate(fromRaw);
   if (!fromParsed) {
@@ -1318,7 +1335,9 @@ async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
   await sendAfwezigheidEmbed(member, reason, fromRaw, tilRaw);
   await updateNonActiefEmbed();
 
-  // DM met aanwezig-knop
+  // Verplaats afwezig-panel naar onderen
+  await setupAfwezigPanel();
+
   try {
     const dmEmbed = new EmbedBuilder()
       .setTitle("📋 Afwezigheid gemeld")
@@ -1435,7 +1454,6 @@ async function handleAanwezig(interaction, userId) {
     await interaction.reply({ content: "✅ Je bent weer aanwezig gemeld!", flags: MessageFlags.Ephemeral }).catch(() => {});
   });
 
-  // DM: bevestiging aanwezig melden
   try {
     const user = await client.users.fetch(userId);
     const dmEmbed = new EmbedBuilder()
