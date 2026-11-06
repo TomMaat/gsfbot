@@ -639,6 +639,68 @@ async function sendSystemLog(title, description, thumbnailUrl = null) {
   }
 }
 
+// ===== LEAVE LOG =====
+async function sendLeaveLog(member) {
+  try {
+    const channel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+
+    const user = member.user;
+    if (!user) return;
+
+    // Rollen die ze hadden (exclusief @everyone)
+    const roles = member.roles.cache
+      .filter(r => r.id !== member.guild.id)
+      .sort((a, b) => b.position - a.position)
+      .map(r => `<@&${r.id}>`);
+
+    const rolesText = roles.length > 0 ? roles.join(", ") : "> Geen rollen";
+
+    // Tijd in server berekenen
+    const joinedAt = member.joinedTimestamp;
+    const now = Date.now();
+    let timeInServerText = "Onbekend";
+    if (joinedAt) {
+      const diff = now - joinedAt;
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const parts = [];
+      if (days > 0) parts.push(`${days}d`);
+      if (hours > 0) parts.push(`${hours}u`);
+      if (minutes > 0) parts.push(`${minutes}m`);
+      timeInServerText = parts.join(" ") || "< 1m";
+    }
+
+    // Account leeftijd
+    let accountAgeText = "Onbekend";
+    if (user.createdTimestamp) {
+      const diff = now - user.createdTimestamp;
+      const days = Math.floor(diff / 86400000);
+      accountAgeText = `${days} dagen`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle("📤 Lid verlaten")
+      .setColor(EMBED_COLOR)
+      .setDescription(`**${user.tag}** heeft de server verlaten.`)
+      .addFields(
+        { name: "👤 Gebruiker", value: `<@${user.id}> (\`${user.tag}\`)`, inline: false },
+        { name: "📅 In server sinds", value: joinedAt ? `<t:${Math.floor(joinedAt / 1000)}:f>` : "Onbekend", inline: true },
+        { name: "⏱️ Tijd in server", value: timeInServerText, inline: true },
+        { name: "🎂 Account leeftijd", value: accountAgeText, inline: true },
+        { name: "🎭 Rollen", value: rolesText.slice(0, 1024), inline: false }
+      )
+      .setFooter({ text: FOOTER_TEXT })
+      .setTimestamp()
+      .setThumbnail(user.displayAvatarURL({ size: 256 }));
+
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+  } catch (err) {
+    console.error("Leave log error:", err.message);
+  }
+}
+
 // ========================================
 // 🚫 DB (GitHub Gist)
 // ========================================
@@ -1228,7 +1290,6 @@ async function setupAfwezigPanel() {
     const channel = await client.channels.fetch(AFWEZIGHEID_CHANNEL_ID);
     if (!channel || !channel.isTextBased()) return;
 
-    // Verwijder ALLEEN het oude panel-bericht (niet de afwezigheids-embeds!)
     if (afwezigPanelMessageId) {
       try {
         const old = await channel.messages.fetch(afwezigPanelMessageId);
@@ -1335,6 +1396,29 @@ async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
   await sendAfwezigheidEmbed(member, reason, fromRaw, tilRaw);
   await updateNonActiefEmbed();
 
+  // Log naar logs-kanaal
+  try {
+    const logChannel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
+    if (logChannel && logChannel.isTextBased()) {
+      const logEmbed = new EmbedBuilder()
+        .setTitle("📋 Afwezigheid gemeld")
+        .setColor(EMBED_COLOR)
+        .setDescription(`<@${member.id}> heeft zich afwezig gemeld.`)
+        .addFields(
+          { name: "Gebruiker", value: `<@${member.id}> (\`${member.user.tag}\`)`, inline: true },
+          { name: "Vanaf", value: fromRaw, inline: true },
+          { name: "Tot", value: tilRaw, inline: true },
+          { name: "Reden", value: reason, inline: false }
+        )
+        .setFooter({ text: FOOTER_TEXT })
+        .setTimestamp()
+        .setThumbnail(member.user.displayAvatarURL());
+      await logChannel.send({ embeds: [logEmbed], allowedMentions: { parse: [] } });
+    }
+  } catch (err) {
+    console.error("Afwezig log error:", err.message);
+  }
+
   // Verplaats afwezig-panel naar onderen
   await setupAfwezigPanel();
 
@@ -1383,7 +1467,6 @@ async function handleAfwezigheid(interaction) {
   }
 
   await interaction.reply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.`, flags: MessageFlags.Ephemeral });
-  await sendLog(interaction, "📋 Afwezigheid", `<@${interaction.user.id}> afwezig gemeld tot **${tilRaw}**.\nReden: ${reason}`);
 }
 
 async function handleAfwezigModalSubmit(interaction) {
@@ -1404,24 +1487,6 @@ async function handleAfwezigModalSubmit(interaction) {
   }
 
   await interaction.editReply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.` });
-
-  try {
-    const channel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
-    if (channel && channel.isTextBased()) {
-      const embed = new EmbedBuilder()
-        .setTitle("📋 Afwezigheid")
-        .setColor(EMBED_COLOR)
-        .setDescription(`<@${interaction.user.id}> afwezig gemeld tot **${tilRaw}**.\nReden: ${reason}`)
-        .addFields(
-          { name: "Gebruiker", value: `<@${interaction.user.id}>`, inline: true },
-          { name: "Datum", value: getCurrentDate(), inline: true }
-        )
-        .setFooter({ text: FOOTER_TEXT })
-        .setTimestamp()
-        .setThumbnail(interaction.user.displayAvatarURL());
-      await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
-    }
-  } catch (err) {}
 }
 
 // ===== Aanwezig melden =====
@@ -1454,6 +1519,13 @@ async function handleAanwezig(interaction, userId) {
     await interaction.reply({ content: "✅ Je bent weer aanwezig gemeld!", flags: MessageFlags.Ephemeral }).catch(() => {});
   });
 
+  // Log aanwezig
+  try {
+    const memberName = member ? `${member.user.tag}` : `<@${userId}>`;
+    await sendSystemLog("✅ Aanwezig gemeld", `<@${userId}> (${memberName}) heeft zich weer aanwezig gemeld.`);
+  } catch (err) {}
+
+  // DM bevestiging
   try {
     const user = await client.users.fetch(userId);
     const dmEmbed = new EmbedBuilder()
@@ -1471,11 +1543,6 @@ async function handleAanwezig(interaction, userId) {
   } catch (err) {
     console.log(`Kon geen bevestigings-DM sturen naar ${userId} (${err.message})`);
   }
-
-  try {
-    const memberName = member ? member.displayName : `<@${userId}>`;
-    await sendSystemLog("✅ Aanwezig gemeld", `${memberName} heeft zich weer aanwezig gemeld.`);
-  } catch (err) {}
 }
 
 async function checkAfwezigExpiry() {
@@ -2498,6 +2565,7 @@ client.on("guildMemberAdd", async (member) => {
 client.on("guildMemberRemove", async (member) => {
   const hasGang = [...member.roles.cache.keys()].some(id => watchedRoleIds.has(id));
   if (hasGang) scheduleUpdate();
+  await sendLeaveLog(member);
 });
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
