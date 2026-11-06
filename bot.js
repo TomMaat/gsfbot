@@ -71,8 +71,12 @@ const GIST_FILENAME = "gsf.json";
 // ===== Overige settings =====
 const ROLE_CHANGE_DEBOUNCE_MS = 2000;
 
-// ===== Max gangleden (handmatig aanpassen) =====
-const MAX_GANG_LEDEN = 30;
+// ===== Gang max (variabel, via /editmax) =====
+const DEFAULT_MAX_GANG_LEDEN = 30;
+let maxGangLeden = DEFAULT_MAX_GANG_LEDEN;
+
+// Drempel voor "bijna vol"
+const BIJNA_VOL_THRESHOLD = 5;
 
 const TICKET_CATEGORIES = {
   application: {
@@ -165,20 +169,15 @@ const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
 
 const AUTO_MOD_MIN_LEVEL = 7;
 
-// ===== Sollicitatie status =====
+// ===== Sollicitatie status (automatisch berekend) =====
 const SOLLICITATIE_STATUS_CONFIG = {
   open:       { label: "Open",       circle: "🟢", color: 0x2ecc71, text: "Er is ruimte voor nieuwe sollicitaties." },
   bijna_vol:  { label: "Bijna vol",  circle: "🟠", color: 0xe67e22, text: "Er is nog beperkt ruimte. Wees snel!" },
   vol:        { label: "Vol",        circle: "🔴", color: 0xe74c3c, text: "We nemen momenteel geen nieuwe sollicitaties aan." },
 };
 
-let sollicitatieStatus = {
-  status: "open",
-  updatedAt: Date.now(),
-  updatedBy: null,
-};
-
 let sollicitatieStatusMessageId = null;
+let lastSollicitatieStatus = null; // voor log-detectie
 
 // ===== Gang porto =====
 let gangPorto = {
@@ -323,14 +322,8 @@ async function updateBotStatus() {
     if (statusToggle) {
       client.user.setActivity(`${guild.memberCount} Discord Members`, { type: 3 });
     } else {
-      let uniqueMembers = new Set();
-      for (const rank of ranks) {
-        const role = guild.roles.cache.get(rank.roleId);
-        if (role) {
-          role.members.forEach(m => uniqueMembers.add(m.id));
-        }
-      }
-      client.user.setActivity(`${uniqueMembers.size} Gang Members`, { type: 3 });
+      const uniqueMembers = countGangMembers();
+      client.user.setActivity(`${uniqueMembers} Gang Members`, { type: 3 });
     }
     statusToggle = !statusToggle;
   } catch (error) {
@@ -353,6 +346,16 @@ function countGangMembers() {
     if (role) role.members.forEach(m => unique.add(m.id));
   }
   return unique.size;
+}
+
+// ===== AUTOMATISCHE SOLLICITATIE STATUS =====
+function computeSollicitatieStatus() {
+  const count = countGangMembers();
+  const plekken = maxGangLeden - count;
+
+  if (plekken <= 0) return "vol";
+  if (plekken <= BIJNA_VOL_THRESHOLD) return "bijna_vol";
+  return "open";
 }
 
 // ===== LEDENLIJST =====
@@ -585,6 +588,24 @@ async function sendLog(interaction, title, description) {
   }
 }
 
+async function sendSystemLog(title, description, thumbnailUrl = null) {
+  try {
+    const channel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setColor(EMBED_COLOR)
+      .setDescription(description)
+      .addFields({ name: "Datum", value: getCurrentDate(), inline: true })
+      .setFooter({ text: FOOTER_TEXT })
+      .setTimestamp();
+    if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+  } catch (err) {
+    console.error("System log error:", err.message);
+  }
+}
+
 // ========================================
 // 🚫 DB (GitHub Gist)
 // ========================================
@@ -606,7 +627,7 @@ async function loadData() {
       const { data } = await octokit.gists.create({
         description: "GSF Bot — Database",
         public: false,
-        files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, sollicitatiestatus: null, gangporto: null, afwezig: {} }, null, 2) } },
+        files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, sollicitatiestatus: null, gangporto: null, afwezig: {}, maxGangLeden: DEFAULT_MAX_GANG_LEDEN }, null, 2) } },
       });
       GIST_ID = data.id;
       console.log(`⚠️ Nieuwe Gist aangemaakt. Zet dit in je env: GIST_ID=${GIST_ID}`);
@@ -619,12 +640,12 @@ async function loadData() {
     const content = data.files[GIST_FILENAME]?.content || "{}";
     const parsed = JSON.parse(content);
 
-    if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("sollicitatiestatus" in parsed) && !("gangporto" in parsed) && !("afwezig" in parsed)) {
+    if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("sollicitatiestatus" in parsed) && !("gangporto" in parsed) && !("afwezig" in parsed) && !("maxGangLeden" in parsed)) {
       blacklistCache = parsed;
     } else {
       blacklistCache = parsed.blacklist || {};
-      if (parsed.sollicitatiestatus) sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
       if (parsed.gangporto) gangPorto = { ...gangPorto, ...parsed.gangporto };
+      if (typeof parsed.maxGangLeden === "number" && parsed.maxGangLeden > 0) maxGangLeden = parsed.maxGangLeden;
       if (parsed.afwezig) {
         for (const [userId, entry] of Object.entries(parsed.afwezig)) {
           if (entry.untilMs > Date.now()) afwezigUsers.set(userId, entry);
@@ -642,7 +663,7 @@ async function loadData() {
     }
     if (changed) await saveData();
     blacklistLoaded = true;
-    console.log(`✅ Data geladen: ${Object.keys(blacklistCache).length} blacklist, ${afwezigUsers.size} afwezig, porto = ${gangPorto.frequentie}, soll.status = ${sollicitatieStatus.status}`);
+    console.log(`✅ Data geladen: ${Object.keys(blacklistCache).length} blacklist, ${afwezigUsers.size} afwezig, porto = ${gangPorto.frequentie}, maxGangLeden = ${maxGangLeden}`);
   } catch (err) {
     console.error("❌ Load error:", err.message);
     blacklistLoaded = true;
@@ -663,9 +684,9 @@ async function saveData() {
         [GIST_FILENAME]: {
           content: JSON.stringify({
             blacklist: blacklistCache,
-            sollicitatiestatus: sollicitatieStatus,
             gangporto: gangPorto,
             afwezig: afwezigObj,
+            maxGangLeden: maxGangLeden,
           }, null, 2),
         },
       },
@@ -992,11 +1013,12 @@ async function handlePortoChange(interaction) {
 }
 
 // ========================================
-// 📝 SOLLICITATIE STATUS DISPLAY
+// 📝 SOLLICITATIE STATUS DISPLAY (automatisch)
 // ========================================
 function buildSollicitatieStatusEmbed() {
-  const current = sollicitatieStatus.status;
   const gangCount = countGangMembers();
+  const current = computeSollicitatieStatus();
+  const plekken = Math.max(0, maxGangLeden - gangCount);
 
   const statusLines = Object.entries(SOLLICITATIE_STATUS_CONFIG).map(([key, cfg]) => {
     const isCurrent = key === current;
@@ -1007,9 +1029,9 @@ function buildSollicitatieStatusEmbed() {
   let desc =
     `**Huidige status**\n` +
     `${SOLLICITATIE_STATUS_CONFIG[current].circle} **${SOLLICITATIE_STATUS_CONFIG[current].label}**\n\n` +
-    `**Gangleden:** ${gangCount} / ${MAX_GANG_LEDEN} leden\n\n` +
-    `**Statussen**\n${statusLines}\n\n` +
-    `Laatst gewijzigd: <t:${Math.floor(sollicitatieStatus.updatedAt / 1000)}:R>`;
+    `**Gangleden:** ${gangCount} / ${maxGangLeden} leden\n` +
+    `**Vrije plekken:** ${plekken}\n\n` +
+    `**Statussen**\n${statusLines}`;
 
   return new EmbedBuilder()
     .setTitle("📝 Sollicitatie Status")
@@ -1046,33 +1068,44 @@ async function updateSollicitatieStatusEmbed() {
   }
 }
 
-async function handleSollicitatieStatus(interaction) {
-  if (!hasModRole(interaction.member)) {
+// Detecteer automatische statusverandering en log het
+async function checkAndLogStatusChange() {
+  const current = computeSollicitatieStatus();
+  if (lastSollicitatieStatus !== null && lastSollicitatieStatus !== current) {
+    const cfg = SOLLICITATIE_STATUS_CONFIG[current];
+    await sendSystemLog("📝 Sollicitatiestatus automatisch gewijzigd", `Status → ${cfg.circle} **${cfg.label}**`);
+  }
+  lastSollicitatieStatus = current;
+}
+
+// ========================================
+// ✏️ /editmax
+// ========================================
+async function handleEditMax(interaction) {
+  if (!hasAdminRole(interaction.member)) {
     return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
   }
 
-  const status = interaction.options.getString("status");
+  const aantal = interaction.options.getInteger("aantal");
 
-  if (!SOLLICITATIE_STATUS_CONFIG[status]) {
-    return interaction.reply({ content: "❌ Ongeldige status.", flags: MessageFlags.Ephemeral });
+  if (aantal < 1 || aantal > 500) {
+    return interaction.reply({ content: "❌ Kies een getal tussen 1 en 500.", flags: MessageFlags.Ephemeral });
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  sollicitatieStatus.status = status;
-  sollicitatieStatus.updatedAt = Date.now();
-  sollicitatieStatus.updatedBy = interaction.user.id;
+  const old = maxGangLeden;
+  maxGangLeden = aantal;
 
   const saved = await saveData();
   await updateSollicitatieStatusEmbed();
-
-  const cfg = SOLLICITATIE_STATUS_CONFIG[status];
-  await sendLog(interaction, "📝 Sollicitatiestatus", `Status → ${cfg.circle} **${cfg.label}**`);
+  await checkAndLogStatusChange();
+  await sendLog(interaction, "✏️ Max gangleden gewijzigd", `Van **${old}** naar **${aantal}**.`);
 
   if (saved) {
-    await interaction.editReply({ content: `✅ Sollicitatiestatus aangepast naar ${cfg.circle} **${cfg.label}** en opgeslagen.` });
+    await interaction.editReply({ content: `✅ Max gangleden aangepast naar **${aantal}** en opgeslagen.` });
   } else {
-    await interaction.editReply({ content: `⚠️ Status aangepast in geheugen, maar opslaan naar Gist mislukt.` });
+    await interaction.editReply({ content: `⚠️ Max aangepast naar **${aantal}** in geheugen, maar opslaan naar Gist mislukt.` });
   }
 }
 
@@ -1595,7 +1628,7 @@ async function setupCommandsEmbed() {
             '**`/blacklist <user> <reden> [duur]`** — Blacklist een gebruiker\n' +
             '**`/unblacklist <user>`** — Haal van de blacklist\n' +
             '**`/portochange <frequentie>`** — Wijzig de gang porto\n' +
-            '**`/sollicitatiestatus <status>`** — Wijzig de sollicitatiestatus',
+            '**`/editmax <aantal>`** — Wijzig max gangleden',
           inline: false
         },
         {
@@ -1655,16 +1688,9 @@ async function registerCommands() {
       .setDescription("Wijzig de gang porto frequentie")
       .addStringOption(o => o.setName("frequentie").setDescription("Nieuwe frequentie (alleen cijfers)").setRequired(true)),
     new SlashCommandBuilder()
-      .setName("sollicitatiestatus")
-      .setDescription("Wijzig de sollicitatie status (alleen mods)")
-      .addStringOption(o => o.setName("status")
-        .setDescription("Nieuwe status")
-        .setRequired(true)
-        .addChoices(
-          { name: "🟢 Open", value: "open" },
-          { name: "🟠 Bijna vol", value: "bijna_vol" },
-          { name: "🔴 Vol", value: "vol" },
-        )),
+      .setName("editmax")
+      .setDescription("Wijzig het maximum aantal gangleden (alleen admins)")
+      .addIntegerOption(o => o.setName("aantal").setDescription("Nieuw maximum (1-500)").setRequired(true).setMinValue(1).setMaxValue(500)),
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -1699,6 +1725,7 @@ async function handlePromote(interaction) {
     await sendPromoEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
     await interaction.deleteReply().catch(() => null);
     await sendLog(interaction, "📈 Promotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
   } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
@@ -1724,6 +1751,7 @@ async function handleDemote(interaction) {
     await sendDemoteEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
     await interaction.deleteReply().catch(() => null);
     await sendLog(interaction, "📉 Demotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
   } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
@@ -1772,6 +1800,11 @@ async function handleAangenomen(interaction) {
     return interaction.reply({ content: `❌ ${targetUser.username} staat op de blacklist en kan niet aangenomen worden.`, flags: MessageFlags.Ephemeral });
   }
 
+  // Check of de gang vol is
+  if (computeSollicitatieStatus() === "vol") {
+    return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, flags: MessageFlags.Ephemeral });
+  }
+
   const rank = ranks.find(r => r.name === rankName);
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   try {
@@ -1784,6 +1817,7 @@ async function handleAangenomen(interaction) {
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
 
     try {
       await targetUser.send({ content: `✅ Gefeliciteerd! Je bent aangenomen bij **GSF** met de rang **${rank.name}**.\nReden: ${reason}` });
@@ -1808,6 +1842,7 @@ async function handleOntslagen(interaction) {
     await sendOntslagenEmbed(targetMember, reason);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
 
     try {
       await targetUser.send({ content: `❌ Je bent ontslagen bij **GSF**.\nReden: ${reason}` });
@@ -1824,6 +1859,7 @@ async function handleRefresh(interaction) {
   try {
     await updateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
     await interaction.editReply("✅ Ledenlijst bijgewerkt.");
     await sendLog(interaction, "🔄 Refresh", `Ledenlijst bijgewerkt.`);
   }
@@ -2042,6 +2078,9 @@ async function handleApplicationModalSubmit(interaction, partKey) {
 
 async function handleAppAccept(interaction, userId) {
   if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
+  if (computeSollicitatieStatus() === "vol") {
+    return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, ephemeral: true });
+  }
   await interaction.reply({
     content: "Kies de rang voor deze gebruiker in het dropdown menu hieronder:",
     components: [buildRankSelectMenu(userId)],
@@ -2068,6 +2107,9 @@ async function handleAppRankSelect(interaction, userId) {
   if (isBlacklisted(userId)) {
     return interaction.reply({ content: `❌ <@${userId}> staat op de blacklist en kan niet aangenomen worden.`, ephemeral: true });
   }
+  if (computeSollicitatieStatus() === "vol") {
+    return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, ephemeral: true });
+  }
 
   await interaction.deferUpdate();
   const roleId = interaction.values[0];
@@ -2092,6 +2134,7 @@ async function handleAppRankSelect(interaction, userId) {
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
 
     try {
       await targetUser.send({
@@ -2223,6 +2266,7 @@ client.once("ready", async () => {
   await updatePortoEmbed();
   await updateSollicitatieStatusEmbed();
   await updateNonActiefEmbed();
+  lastSollicitatieStatus = computeSollicitatieStatus();
   startBlacklistInterval();
   startDailyReminderInterval();
   setInterval(checkAfwezigExpiry, 60_000);
@@ -2266,6 +2310,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     await syncAutoModRole(newMember);
     scheduleUpdate();
     await updateSollicitatieStatusEmbed();
+    await checkAndLogStatusChange();
   }
 });
 
@@ -2329,7 +2374,7 @@ client.on("interactionCreate", async (interaction) => {
     else if (name === "blacklist") await handleBlacklist(interaction);
     else if (name === "unblacklist") await handleUnblacklist(interaction);
     else if (name === "portochange") await handlePortoChange(interaction);
-    else if (name === "sollicitatiestatus") await handleSollicitatieStatus(interaction);
+    else if (name === "editmax") await handleEditMax(interaction);
     return;
   }
 });
