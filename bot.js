@@ -71,6 +71,9 @@ const GIST_FILENAME = "gsf.json";
 // ===== Overige settings =====
 const ROLE_CHANGE_DEBOUNCE_MS = 2000;
 
+// ===== Max gangleden (handmatig aanpassen) =====
+const MAX_GANG_LEDEN = 30;
+
 const TICKET_CATEGORIES = {
   application: {
     name: "Sollicitatie",
@@ -169,13 +172,8 @@ const SOLLICITATIE_STATUS_CONFIG = {
   vol:        { label: "Vol",        circle: "🔴", color: 0xe74c3c, text: "We nemen momenteel geen nieuwe sollicitaties aan." },
 };
 
-const DEFAULT_MAX_LEDEN = 30;
-
 let sollicitatieStatus = {
   status: "open",
-  aantal: 0,
-  max: DEFAULT_MAX_LEDEN,
-  notitie: null,
   updatedAt: Date.now(),
   updatedBy: null,
 };
@@ -343,6 +341,18 @@ async function updateBotStatus() {
 function startStatusInterval() {
   updateBotStatus();
   setInterval(updateBotStatus, 10000);
+}
+
+// ===== GANG LEDEN TELLEN =====
+function countGangMembers() {
+  const guild = client.guilds.cache.first();
+  if (!guild) return 0;
+  const unique = new Set();
+  for (const rank of ranks) {
+    const role = guild.roles.cache.get(rank.roleId);
+    if (role) role.members.forEach(m => unique.add(m.id));
+  }
+  return unique.size;
 }
 
 // ===== LEDENLIJST =====
@@ -613,11 +623,7 @@ async function loadData() {
       blacklistCache = parsed;
     } else {
       blacklistCache = parsed.blacklist || {};
-      if (parsed.sollicitatiestatus) {
-        sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
-        if (sollicitatieStatus.max === null || sollicitatieStatus.max === undefined) sollicitatieStatus.max = DEFAULT_MAX_LEDEN;
-        if (sollicitatieStatus.aantal === null || sollicitatieStatus.aantal === undefined) sollicitatieStatus.aantal = 0;
-      }
+      if (parsed.sollicitatiestatus) sollicitatieStatus = { ...sollicitatieStatus, ...parsed.sollicitatiestatus };
       if (parsed.gangporto) gangPorto = { ...gangPorto, ...parsed.gangporto };
       if (parsed.afwezig) {
         for (const [userId, entry] of Object.entries(parsed.afwezig)) {
@@ -990,10 +996,8 @@ async function handlePortoChange(interaction) {
 // ========================================
 function buildSollicitatieStatusEmbed() {
   const current = sollicitatieStatus.status;
-  const max = sollicitatieStatus.max ?? DEFAULT_MAX_LEDEN;
-  const aantal = sollicitatieStatus.aantal ?? 0;
+  const gangCount = countGangMembers();
 
-  // Status-lijst: alle 3 de bolletjes met betekenis, actieve is vet
   const statusLines = Object.entries(SOLLICITATIE_STATUS_CONFIG).map(([key, cfg]) => {
     const isCurrent = key === current;
     const label = isCurrent ? `**${cfg.label}**` : cfg.label;
@@ -1003,13 +1007,9 @@ function buildSollicitatieStatusEmbed() {
   let desc =
     `**Huidige status**\n` +
     `${SOLLICITATIE_STATUS_CONFIG[current].circle} **${SOLLICITATIE_STATUS_CONFIG[current].label}**\n\n` +
-    `**Plaatsen:** ${aantal} / ${max} leden\n\n` +
-    `**Statussen**\n${statusLines}`;
-
-  if (sollicitatieStatus.notitie) {
-    desc += `\n\n**Notitie:** ${sollicitatieStatus.notitie}`;
-  }
-  desc += `\n\nLaatst gewijzigd: <t:${Math.floor(sollicitatieStatus.updatedAt / 1000)}:R>`;
+    `**Gangleden:** ${gangCount} / ${MAX_GANG_LEDEN} leden\n\n` +
+    `**Statussen**\n${statusLines}\n\n` +
+    `Laatst gewijzigd: <t:${Math.floor(sollicitatieStatus.updatedAt / 1000)}:R>`;
 
   return new EmbedBuilder()
     .setTitle("📝 Sollicitatie Status")
@@ -1052,9 +1052,6 @@ async function handleSollicitatieStatus(interaction) {
   }
 
   const status = interaction.options.getString("status");
-  const aantal = interaction.options.getInteger("aantal");
-  const max = interaction.options.getInteger("max");
-  const notitie = interaction.options.getString("notitie");
 
   if (!SOLLICITATIE_STATUS_CONFIG[status]) {
     return interaction.reply({ content: "❌ Ongeldige status.", flags: MessageFlags.Ephemeral });
@@ -1063,9 +1060,6 @@ async function handleSollicitatieStatus(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   sollicitatieStatus.status = status;
-  if (aantal !== null && aantal !== undefined) sollicitatieStatus.aantal = aantal;
-  if (max !== null && max !== undefined) sollicitatieStatus.max = max;
-  if (notitie !== null && notitie !== undefined) sollicitatieStatus.notitie = notitie;
   sollicitatieStatus.updatedAt = Date.now();
   sollicitatieStatus.updatedBy = interaction.user.id;
 
@@ -1073,7 +1067,7 @@ async function handleSollicitatieStatus(interaction) {
   await updateSollicitatieStatusEmbed();
 
   const cfg = SOLLICITATIE_STATUS_CONFIG[status];
-  await sendLog(interaction, "📝 Sollicitatiestatus", `Status → ${cfg.circle} **${cfg.label}**${notitie ? `\nNotitie: ${notitie}` : ""}`);
+  await sendLog(interaction, "📝 Sollicitatiestatus", `Status → ${cfg.circle} **${cfg.label}**`);
 
   if (saved) {
     await interaction.editReply({ content: `✅ Sollicitatiestatus aangepast naar ${cfg.circle} **${cfg.label}** en opgeslagen.` });
@@ -1601,7 +1595,7 @@ async function setupCommandsEmbed() {
             '**`/blacklist <user> <reden> [duur]`** — Blacklist een gebruiker\n' +
             '**`/unblacklist <user>`** — Haal van de blacklist\n' +
             '**`/portochange <frequentie>`** — Wijzig de gang porto\n' +
-            '**`/sollicitatiestatus <status> [aantal] [max] [notitie]`** — Wijzig de sollicitatiestatus',
+            '**`/sollicitatiestatus <status>`** — Wijzig de sollicitatiestatus',
           inline: false
         },
         {
@@ -1670,10 +1664,7 @@ async function registerCommands() {
           { name: "🟢 Open", value: "open" },
           { name: "🟠 Bijna vol", value: "bijna_vol" },
           { name: "🔴 Vol", value: "vol" },
-        ))
-      .addIntegerOption(o => o.setName("aantal").setDescription("Aantal huidige sollicitaties").setRequired(false).setMinValue(0))
-      .addIntegerOption(o => o.setName("max").setDescription("Maximaal aantal leden (standaard 30)").setRequired(false).setMinValue(1))
-      .addStringOption(o => o.setName("notitie").setDescription("Extra notitie").setRequired(false)),
+        )),
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -1707,6 +1698,7 @@ async function handlePromote(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendPromoEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
+    await updateSollicitatieStatusEmbed();
     await interaction.deleteReply().catch(() => null);
     await sendLog(interaction, "📈 Promotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
   } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
@@ -1731,6 +1723,7 @@ async function handleDemote(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendDemoteEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
+    await updateSollicitatieStatusEmbed();
     await interaction.deleteReply().catch(() => null);
     await sendLog(interaction, "📉 Demotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
   } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
@@ -1790,6 +1783,7 @@ async function handleAangenomen(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
+    await updateSollicitatieStatusEmbed();
 
     try {
       await targetUser.send({ content: `✅ Gefeliciteerd! Je bent aangenomen bij **GSF** met de rang **${rank.name}**.\nReden: ${reason}` });
@@ -1813,6 +1807,7 @@ async function handleOntslagen(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendOntslagenEmbed(targetMember, reason);
     await safeUpdateList();
+    await updateSollicitatieStatusEmbed();
 
     try {
       await targetUser.send({ content: `❌ Je bent ontslagen bij **GSF**.\nReden: ${reason}` });
@@ -1826,7 +1821,12 @@ async function handleOntslagen(interaction) {
 async function handleRefresh(interaction) {
   if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  try { await updateList(); await interaction.editReply("✅ Ledenlijst bijgewerkt."); await sendLog(interaction, "🔄 Refresh", `Ledenlijst bijgewerkt.`); }
+  try {
+    await updateList();
+    await updateSollicitatieStatusEmbed();
+    await interaction.editReply("✅ Ledenlijst bijgewerkt.");
+    await sendLog(interaction, "🔄 Refresh", `Ledenlijst bijgewerkt.`);
+  }
   catch (err) { await interaction.editReply(`❌ ${err.message}`); }
 }
 
@@ -2091,6 +2091,7 @@ async function handleAppRankSelect(interaction, userId) {
 
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
+    await updateSollicitatieStatusEmbed();
 
     try {
       await targetUser.send({
@@ -2264,6 +2265,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (touchesGangRole) {
     await syncAutoModRole(newMember);
     scheduleUpdate();
+    await updateSollicitatieStatusEmbed();
   }
 });
 
