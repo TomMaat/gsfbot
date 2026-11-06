@@ -71,11 +71,10 @@ const GIST_FILENAME = "gsf.json";
 // ===== Overige settings =====
 const ROLE_CHANGE_DEBOUNCE_MS = 2000;
 
-// ===== Gang max (variabel, via /editmax) =====
+// ===== Gang max =====
 const DEFAULT_MAX_GANG_LEDEN = 30;
 let maxGangLeden = DEFAULT_MAX_GANG_LEDEN;
 
-// Drempel voor "bijna vol"
 const BIJNA_VOL_THRESHOLD = 5;
 
 const TICKET_CATEGORIES = {
@@ -169,7 +168,7 @@ const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
 
 const AUTO_MOD_MIN_LEVEL = 7;
 
-// ===== Sollicitatie status (automatisch berekend) =====
+// ===== Sollicitatie status =====
 const SOLLICITATIE_STATUS_CONFIG = {
   open:       { label: "Open",       circle: "🟢", color: 0x2ecc71, text: "Er is ruimte voor nieuwe sollicitaties." },
   bijna_vol:  { label: "Bijna vol",  circle: "🟠", color: 0xe67e22, text: "Er is nog beperkt ruimte. Wees snel!" },
@@ -177,7 +176,7 @@ const SOLLICITATIE_STATUS_CONFIG = {
 };
 
 let sollicitatieStatusMessageId = null;
-let lastSollicitatieStatus = null; // voor log-detectie
+let lastSollicitatieStatus = null;
 
 // ===== Gang porto =====
 let gangPorto = {
@@ -190,6 +189,7 @@ let gangPortoMessageId = null;
 // ===== Afwezigheid =====
 const afwezigUsers = new Map();
 let nonActiefMessageId = null;
+let afwezigPanelMessageId = null;
 
 // ===== Helpers =====
 function getNumber(name) {
@@ -210,6 +210,24 @@ function getCurrentDate() {
 
 function getFullDate() {
   return new Date().toLocaleDateString('nl-NL', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Parse dd/mm/jjjj of dd-mm-jjjj
+function parseDutchDate(input) {
+  if (!input) return null;
+  const match = input.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (!match) return null;
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  const test = new Date(year, month - 1, day);
+  if (test.getFullYear() !== year || test.getMonth() !== month - 1 || test.getDate() !== day) return null;
+  return { day, month, year };
+}
+
+function dutchDateToMs(dateObj) {
+  return new Date(dateObj.year, dateObj.month - 1, dateObj.day, 23, 59, 59, 999).getTime();
 }
 
 function hasAdminRole(member) { return member.roles.cache.has(ADMIN_ROLE_ID); }
@@ -256,6 +274,9 @@ async function removeLidRole(member) {
   if (member.roles.cache.has(LID_ROLE_ID)) await member.roles.remove(LID_ROLE_ID);
 }
 
+// ===== AFWEZIGHEID ROL SYNC =====
+// Afwezig → actief weg, non-actief aan
+// Aanwezig → non-actief weg, actief aan
 async function syncActiefRole(member) {
   try {
     if (member.user.bot) return;
@@ -263,12 +284,14 @@ async function syncActiefRole(member) {
     const afwezigEntry = afwezigUsers.get(member.id);
     const isAfwezig = afwezigEntry && afwezigEntry.untilMs > Date.now();
 
-    if (hasGang && !isAfwezig) {
-      if (!member.roles.cache.has(ACTIEF_ROLE_ID)) await member.roles.add(ACTIEF_ROLE_ID);
-      if (member.roles.cache.has(AFWEZIG_ROLE_ID)) await member.roles.remove(AFWEZIG_ROLE_ID);
-    } else if (hasGang && isAfwezig) {
-      if (member.roles.cache.has(ACTIEF_ROLE_ID)) await member.roles.remove(ACTIEF_ROLE_ID);
-      if (!member.roles.cache.has(AFWEZIG_ROLE_ID)) await member.roles.add(AFWEZIG_ROLE_ID);
+    if (hasGang) {
+      if (isAfwezig) {
+        if (member.roles.cache.has(ACTIEF_ROLE_ID)) await member.roles.remove(ACTIEF_ROLE_ID);
+        if (!member.roles.cache.has(AFWEZIG_ROLE_ID)) await member.roles.add(AFWEZIG_ROLE_ID);
+      } else {
+        if (member.roles.cache.has(AFWEZIG_ROLE_ID)) await member.roles.remove(AFWEZIG_ROLE_ID);
+        if (!member.roles.cache.has(ACTIEF_ROLE_ID)) await member.roles.add(ACTIEF_ROLE_ID);
+      }
     } else {
       if (member.roles.cache.has(ACTIEF_ROLE_ID)) await member.roles.remove(ACTIEF_ROLE_ID);
       if (member.roles.cache.has(AFWEZIG_ROLE_ID)) await member.roles.remove(AFWEZIG_ROLE_ID);
@@ -627,7 +650,7 @@ async function loadData() {
       const { data } = await octokit.gists.create({
         description: "GSF Bot — Database",
         public: false,
-        files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, sollicitatiestatus: null, gangporto: null, afwezig: {}, maxGangLeden: DEFAULT_MAX_GANG_LEDEN }, null, 2) } },
+        files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, gangporto: null, afwezig: {}, maxGangLeden: DEFAULT_MAX_GANG_LEDEN }, null, 2) } },
       });
       GIST_ID = data.id;
       console.log(`⚠️ Nieuwe Gist aangemaakt. Zet dit in je env: GIST_ID=${GIST_ID}`);
@@ -640,7 +663,7 @@ async function loadData() {
     const content = data.files[GIST_FILENAME]?.content || "{}";
     const parsed = JSON.parse(content);
 
-    if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("sollicitatiestatus" in parsed) && !("gangporto" in parsed) && !("afwezig" in parsed) && !("maxGangLeden" in parsed)) {
+    if (parsed && typeof parsed === "object" && !("blacklist" in parsed) && !("gangporto" in parsed) && !("afwezig" in parsed) && !("maxGangLeden" in parsed)) {
       blacklistCache = parsed;
     } else {
       blacklistCache = parsed.blacklist || {};
@@ -1013,7 +1036,7 @@ async function handlePortoChange(interaction) {
 }
 
 // ========================================
-// 📝 SOLLICITATIE STATUS DISPLAY (automatisch)
+// 📝 SOLLICITATIE STATUS DISPLAY
 // ========================================
 function buildSollicitatieStatusEmbed() {
   const gangCount = countGangMembers();
@@ -1068,7 +1091,6 @@ async function updateSollicitatieStatusEmbed() {
   }
 }
 
-// Detecteer automatische statusverandering en log het
 async function checkAndLogStatusChange() {
   const current = computeSollicitatieStatus();
   if (lastSollicitatieStatus !== null && lastSollicitatieStatus !== current) {
@@ -1158,40 +1180,155 @@ async function updateNonActiefEmbed() {
 }
 
 // ========================================
-// 📋 AFWEZIGHEID
+// 📋 AFWEZIGHEID PANEL
 // ========================================
-async function handleAfwezigheid(interaction) {
-  const reason = interaction.options.getString("reason");
-  const fromDate = interaction.options.getString("from");
-  const tilDate = interaction.options.getString("til");
+function buildAfwezigPanelEmbed() {
+  return new EmbedBuilder()
+    .setTitle("📋 Afwezigheid melden")
+    .setColor(EMBED_COLOR)
+    .setDescription(
+      "**Meld je afwezigheid**\n\n" +
+      "Klik op de knop hieronder om je afwezigheid te melden.\n" +
+      "Je krijgt dan de **non-actief** rol en je **actief** rol wordt weggehaald.\n\n" +
+      "**Datum formaat**\n" +
+      "> `01/01/2026`\n" +
+      "> `01-01-2026`\n\n" +
+      "Je kan je op elk moment eerder aanwezig melden."
+    )
+    .setFooter({ text: FOOTER_TEXT })
+    .setTimestamp();
+}
 
-  let untilMs = null;
-  const parsed = Date.parse(tilDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
-  if (!isNaN(parsed)) untilMs = parsed + 86_400_000;
-  if (!untilMs) return interaction.reply({ content: "❌ Ongeldige 'tot' datum. Gebruik dd/mm/jjjj.", flags: MessageFlags.Ephemeral });
+function buildAfwezigPanelButton() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('afwezig_melden_open')
+      .setLabel('Afwezig melden')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Primary)
+  );
+}
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+async function setupAfwezigPanel() {
+  try {
+    const channel = await client.channels.fetch(AFWEZIGHEID_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+    try {
+      const fetched = await channel.messages.fetch({ limit: 50 });
+      const botMsgs = fetched.filter(m => m.author.id === client.user.id);
+      for (const m of botMsgs.values()) await m.delete().catch(() => {});
+    } catch {}
 
-  const member = await interaction.guild.members.fetch(interaction.user.id);
+    const sent = await channel.send({ embeds: [buildAfwezigPanelEmbed()], components: [buildAfwezigPanelButton()] });
+    afwezigPanelMessageId = sent.id;
+    console.log("✅ Afwezigheid panel geplaatst");
+  } catch (e) {
+    console.error("Afwezig panel error:", e.message);
+  }
+}
+
+function buildAfwezigModal() {
+  const modal = new ModalBuilder()
+    .setCustomId("afwezig_melden_modal")
+    .setTitle("Afwezigheid melden");
+
+  const reasonInput = new TextInputBuilder()
+    .setCustomId("reason")
+    .setLabel("Reden")
+    .setPlaceholder("Waarom ben je afwezig?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(300);
+
+  const fromInput = new TextInputBuilder()
+    .setCustomId("from")
+    .setLabel("Vanaf (dd/mm/jjjj of dd-mm-jjjj)")
+    .setPlaceholder("01/01/2026")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(10);
+
+  const tilInput = new TextInputBuilder()
+    .setCustomId("til")
+    .setLabel("Tot (dd/mm/jjjj of dd-mm-jjjj)")
+    .setPlaceholder("07/01/2026")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(10);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(reasonInput),
+    new ActionRowBuilder().addComponents(fromInput),
+    new ActionRowBuilder().addComponents(tilInput)
+  );
+  return modal;
+}
+
+// Centrale functie voor afwezig melden (wordt gebruikt door /afwezig én modal)
+async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
+  const fromParsed = parseDutchDate(fromRaw);
+  if (!fromParsed) {
+    return {
+      ok: false,
+      error:
+        "❌ **Ongeldige 'vanaf' datum.**\n\n" +
+        "Gebruik een van deze formaten:\n" +
+        "> `01/01/2026`\n" +
+        "> `01-01-2026`\n\n" +
+        `Je gaf: \`${fromRaw}\``
+    };
+  }
+
+  const tilParsed = parseDutchDate(tilRaw);
+  if (!tilParsed) {
+    return {
+      ok: false,
+      error:
+        "❌ **Ongeldige 'tot' datum.**\n\n" +
+        "Gebruik een van deze formaten:\n" +
+        "> `01/01/2026`\n" +
+        "> `01-01-2026`\n\n" +
+        `Je gaf: \`${tilRaw}\``
+    };
+  }
+
+  const fromMs = dutchDateToMs(fromParsed);
+  const untilMs = dutchDateToMs(tilParsed);
+
+  if (untilMs < fromMs) {
+    return { ok: false, error: "❌ De **'tot'** datum kan niet vóór de **'vanaf'** datum liggen." };
+  }
+
+  if (untilMs < Date.now()) {
+    return { ok: false, error: "❌ De **'tot'** datum ligt in het verleden. Kies een datum in de toekomst." };
+  }
+
+  const member = await guild.members.fetch(userId);
 
   afwezigUsers.set(member.id, {
     reason,
-    fromDate,
-    tilDate,
+    fromDate: fromRaw,
+    tilDate: tilRaw,
     untilMs,
     since: Date.now(),
   });
   await saveData();
 
   await syncActiefRole(member);
-  await sendAfwezigheidEmbed(member, reason, fromDate, tilDate);
+  await sendAfwezigheidEmbed(member, reason, fromRaw, tilRaw);
   await updateNonActiefEmbed();
 
+  // DM met aanwezig-knop
   try {
     const dmEmbed = new EmbedBuilder()
       .setTitle("📋 Afwezigheid gemeld")
       .setColor(EMBED_COLOR)
-      .setDescription(`Je bent afwezig gemeld tot **${tilDate}**.\nReden: ${reason}\n\nKlik hieronder om je weer aanwezig te melden.`)
+      .setDescription(
+        `Je bent afwezig gemeld tot **${tilRaw}**.\n` +
+        `Reden: ${reason}\n\n` +
+        `Je actief-rol is weggehaald en je hebt de non-actief-rol gekregen.\n\n` +
+        `Klik hieronder om je eerder weer aanwezig te melden (of wacht tot de einddatum).`
+      )
       .setFooter({ text: FOOTER_TEXT })
       .setTimestamp();
 
@@ -1208,10 +1345,67 @@ async function handleAfwezigheid(interaction) {
     console.log("Kon geen DM sturen naar user voor afwezigheid.");
   }
 
-  await interaction.editReply({ content: `✅ Afwezigheid gemeld! Je krijgt de non-actief rol tot **${tilDate}**.` });
-  await sendLog(interaction, "📋 Afwezigheid", `<@${member.id}> afwezig gemeld tot **${tilDate}**.\nReden: ${reason}`);
+  return { ok: true, member };
 }
 
+async function handleAfwezigheid(interaction) {
+  const reason = interaction.options.getString("reason");
+  const fromRaw = interaction.options.getString("from");
+  const tilRaw = interaction.options.getString("til");
+
+  const result = await registerAfwezigheid({
+    guild: interaction.guild,
+    userId: interaction.user.id,
+    reason, fromRaw, tilRaw,
+  });
+
+  if (!result.ok) {
+    return interaction.reply({ content: result.error, flags: MessageFlags.Ephemeral });
+  }
+
+  await interaction.reply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.`, flags: MessageFlags.Ephemeral });
+  await sendLog(interaction, "📋 Afwezigheid", `<@${interaction.user.id}> afwezig gemeld tot **${tilRaw}**.\nReden: ${reason}`);
+}
+
+async function handleAfwezigModalSubmit(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const reason = interaction.fields.getTextInputValue("reason");
+  const fromRaw = interaction.fields.getTextInputValue("from");
+  const tilRaw = interaction.fields.getTextInputValue("til");
+
+  const result = await registerAfwezigheid({
+    guild: interaction.guild,
+    userId: interaction.user.id,
+    reason, fromRaw, tilRaw,
+  });
+
+  if (!result.ok) {
+    return interaction.editReply({ content: result.error });
+  }
+
+  await interaction.editReply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.` });
+
+  try {
+    const channel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
+    if (channel && channel.isTextBased()) {
+      const embed = new EmbedBuilder()
+        .setTitle("📋 Afwezigheid")
+        .setColor(EMBED_COLOR)
+        .setDescription(`<@${interaction.user.id}> afwezig gemeld tot **${tilRaw}**.\nReden: ${reason}`)
+        .addFields(
+          { name: "Gebruiker", value: `<@${interaction.user.id}>`, inline: true },
+          { name: "Datum", value: getCurrentDate(), inline: true }
+        )
+        .setFooter({ text: FOOTER_TEXT })
+        .setTimestamp()
+        .setThumbnail(interaction.user.displayAvatarURL());
+      await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    }
+  } catch (err) {}
+}
+
+// ===== Aanwezig melden =====
 async function handleAanwezig(interaction, userId) {
   if (interaction.user.id !== userId) {
     return interaction.reply({ content: "❌ Deze knop is niet voor jou.", flags: MessageFlags.Ephemeral });
@@ -1225,8 +1419,9 @@ async function handleAanwezig(interaction, userId) {
   afwezigUsers.delete(userId);
   await saveData();
 
+  let member = null;
   try {
-    const member = await interaction.guild.members.fetch(userId);
+    member = await interaction.guild.members.fetch(userId);
     await syncActiefRole(member);
   } catch (err) {}
 
@@ -1239,43 +1434,30 @@ async function handleAanwezig(interaction, userId) {
   }).catch(async () => {
     await interaction.reply({ content: "✅ Je bent weer aanwezig gemeld!", flags: MessageFlags.Ephemeral }).catch(() => {});
   });
-}
 
-async function sendDailyReminders() {
-  if (afwezigUsers.size === 0) return;
-  console.log(`📨 Dagelijkse herinneringen sturen naar ${afwezigUsers.size} afwezige(n)...`);
-  for (const [userId, entry] of afwezigUsers.entries()) {
-    if (entry.untilMs <= Date.now()) continue;
-    try {
-      const user = await client.users.fetch(userId);
-      const embed = new EmbedBuilder()
-        .setTitle("⏰ Herinnering — Aanwezig melden")
-        .setColor(EMBED_COLOR)
-        .setDescription(
-          `Je staat nog als **afwezig** gemeld tot **${entry.tilDate}**.\n` +
-          `Reden: ${entry.reason}\n\n` +
-          `Ben je weer beschikbaar? Klik op de knop hieronder om je aanwezig te melden.`
-        )
-        .setFooter({ text: FOOTER_TEXT })
-        .setTimestamp();
+  // DM: bevestiging aanwezig melden
+  try {
+    const user = await client.users.fetch(userId);
+    const dmEmbed = new EmbedBuilder()
+      .setTitle("✅ Weer aanwezig gemeld")
+      .setColor(EMBED_COLOR)
+      .setDescription(
+        `Je bent weer **aanwezig** gemeld!\n\n` +
+        `Je non-actief-rol is weggehaald en je actief-rol is teruggezet.\n` +
+        `Welkom terug bij **GSF**!`
+      )
+      .setFooter({ text: FOOTER_TEXT })
+      .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`aanwezig_${userId}`)
-          .setLabel("Aanwezig melden")
-          .setEmoji("✅")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      await user.send({ embeds: [embed], components: [row] });
-    } catch (err) {
-      console.log(`Kon geen DM sturen naar ${userId} (${err.message})`);
-    }
+    await user.send({ embeds: [dmEmbed] });
+  } catch (err) {
+    console.log(`Kon geen bevestigings-DM sturen naar ${userId} (${err.message})`);
   }
-}
 
-function startDailyReminderInterval() {
-  setInterval(sendDailyReminders, 24 * 60 * 60 * 1000);
+  try {
+    const memberName = member ? member.displayName : `<@${userId}>`;
+    await sendSystemLog("✅ Aanwezig gemeld", `${memberName} heeft zich weer aanwezig gemeld.`);
+  } catch (err) {}
 }
 
 async function checkAfwezigExpiry() {
@@ -1290,6 +1472,21 @@ async function checkAfwezigExpiry() {
       try {
         const member = await guild.members.fetch(userId);
         await syncActiefRole(member);
+
+        try {
+          const user = await client.users.fetch(userId);
+          const dmEmbed = new EmbedBuilder()
+            .setTitle("✅ Afwezigheid automatisch beëindigd")
+            .setColor(EMBED_COLOR)
+            .setDescription(
+              `Je afwezigheid is **automatisch beëindigd** op de einddatum.\n\n` +
+              `Je non-actief-rol is weggehaald en je actief-rol is teruggezet.\n` +
+              `Welkom terug bij **GSF**!`
+            )
+            .setFooter({ text: FOOTER_TEXT })
+            .setTimestamp();
+          await user.send({ embeds: [dmEmbed] });
+        } catch (err) {}
       } catch {}
     }
   }
@@ -1663,7 +1860,7 @@ async function registerCommands() {
     new SlashCommandBuilder().setName("removewarn").setDescription("Trek waarschuwing in").addIntegerOption(o => o.setName("number").setDescription("1 of 2").setRequired(true).setMinValue(1).setMaxValue(2)).addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(true)),
     new SlashCommandBuilder().setName("aangenomen").setDescription("Neem een nieuw lid aan").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addStringOption(o => o.setName("rank").setDescription("Rang").setRequired(true).addChoices(...ranks.map(r => ({ name: r.name, value: r.name })))).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(true)),
     new SlashCommandBuilder().setName("ontslagen").setDescription("Ontsla een lid").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(true)),
-    new SlashCommandBuilder().setName("afwezig").setDescription("Meld afwezigheid").addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(true)).addStringOption(o => o.setName("from").setDescription("Vanaf (bijv. 01/06/2025)").setRequired(true)).addStringOption(o => o.setName("til").setDescription("Tot (bijv. 07/06/2025)").setRequired(true)),
+    new SlashCommandBuilder().setName("afwezig").setDescription("Meld afwezigheid").addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(true)).addStringOption(o => o.setName("from").setDescription("Vanaf (dd/mm/jjjj of dd-mm-jjjj)").setRequired(true)).addStringOption(o => o.setName("til").setDescription("Tot (dd/mm/jjjj of dd-mm-jjjj)").setRequired(true)),
     new SlashCommandBuilder().setName("clear").setDescription("Verwijder berichten").addStringOption(o => o.setName("number").setDescription("Aantal of 'all'").setRequired(true)),
     new SlashCommandBuilder().setName("mute").setDescription("Mute een lid").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addIntegerOption(o => o.setName("minutes").setDescription("Minuten").setRequired(true).setMinValue(1).setMaxValue(1440)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(false)),
     new SlashCommandBuilder().setName("unmute").setDescription("Unmute een lid").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(false)),
@@ -1800,7 +1997,6 @@ async function handleAangenomen(interaction) {
     return interaction.reply({ content: `❌ ${targetUser.username} staat op de blacklist en kan niet aangenomen worden.`, flags: MessageFlags.Ephemeral });
   }
 
-  // Check of de gang vol is
   if (computeSollicitatieStatus() === "vol") {
     return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, flags: MessageFlags.Ephemeral });
   }
@@ -2260,6 +2456,7 @@ client.once("ready", async () => {
   await safeUpdateList();
   await setupTicketPanel();
   await setupCommandsEmbed();
+  await setupAfwezigPanel();
 
   await loadData();
   await updateBlacklistEmbed();
@@ -2268,7 +2465,6 @@ client.once("ready", async () => {
   await updateNonActiefEmbed();
   lastSollicitatieStatus = computeSollicitatieStatus();
   startBlacklistInterval();
-  startDailyReminderInterval();
   setInterval(checkAfwezigExpiry, 60_000);
 
   startStatusInterval();
@@ -2335,6 +2531,9 @@ client.on("interactionCreate", async (interaction) => {
       const userId = interaction.customId.split('_')[1];
       return await handleAanwezig(interaction, userId);
     }
+    if (interaction.customId === 'afwezig_melden_open') {
+      return await interaction.showModal(buildAfwezigModal());
+    }
   }
 
   if (interaction.isStringSelectMenu()) {
@@ -2347,9 +2546,14 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  if (interaction.isModalSubmit() && interaction.customId.startsWith('app_modal_')) {
-    const partKey = interaction.customId.replace('app_modal_', '');
-    return await handleApplicationModalSubmit(interaction, partKey);
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === 'afwezig_melden_modal') {
+      return await handleAfwezigModalSubmit(interaction);
+    }
+    if (interaction.customId.startsWith('app_modal_')) {
+      const partKey = interaction.customId.replace('app_modal_', '');
+      return await handleApplicationModalSubmit(interaction, partKey);
+    }
   }
 
   if (interaction.isChatInputCommand()) {
