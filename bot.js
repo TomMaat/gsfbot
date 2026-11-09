@@ -211,7 +211,6 @@ function getFullDate() {
   return new Date().toLocaleDateString('nl-NL', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Parse dd/mm/jjjj of dd-mm-jjjj
 function parseDutchDate(input) {
   if (!input) return null;
   const match = input.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
@@ -229,7 +228,6 @@ function dutchDateToMs(dateObj) {
   return new Date(dateObj.year, dateObj.month - 1, dateObj.day, 23, 59, 59, 999).getTime();
 }
 
-// Duur formatteren: "2d 5u 12m"
 function formatRemaining(ms) {
   if (ms <= 0) return "verlopen";
   const totalSec = Math.floor(ms / 1000);
@@ -648,7 +646,6 @@ async function sendLeaveLog(member) {
     const user = member.user;
     if (!user) return;
 
-    // Rollen die ze hadden (exclusief @everyone)
     const roles = member.roles.cache
       .filter(r => r.id !== member.guild.id)
       .sort((a, b) => b.position - a.position)
@@ -656,7 +653,6 @@ async function sendLeaveLog(member) {
 
     const rolesText = roles.length > 0 ? roles.join(", ") : "> Geen rollen";
 
-    // Tijd in server berekenen
     const joinedAt = member.joinedTimestamp;
     const now = Date.now();
     let timeInServerText = "Onbekend";
@@ -672,7 +668,6 @@ async function sendLeaveLog(member) {
       timeInServerText = parts.join(" ") || "< 1m";
     }
 
-    // Account leeftijd
     let accountAgeText = "Onbekend";
     if (user.createdTimestamp) {
       const diff = now - user.createdTimestamp;
@@ -936,8 +931,10 @@ function startBlacklistInterval() {
 }
 
 async function handleBlacklist(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   if (!hasModRole(interaction.member)) {
-    return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   }
 
   const targetUser = interaction.options.getUser("user");
@@ -945,22 +942,21 @@ async function handleBlacklist(interaction) {
   const durationInput = interaction.options.getString("duur");
 
   if (targetUser.bot) {
-    return interaction.reply({ content: "❌ Je kan geen bot blacklisten.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Je kan geen bot blacklisten." });
   }
 
   if (isBlacklisted(targetUser.id)) {
-    return interaction.reply({ content: `❌ ${targetUser.username} staat al op de blacklist.`, flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: `❌ ${targetUser.username} staat al op de blacklist.` });
   }
 
   let durationMs = null;
   if (durationInput) {
     durationMs = parseDuration(durationInput);
     if (!durationMs) {
-      return interaction.reply({ content: "❌ Ongeldige duur. Gebruik bijv. `7d`, `12h`, `30m` of laat leeg voor permanent.", flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: "❌ Ongeldige duur. Gebruik bijv. `7d`, `12h`, `30m` of laat leeg voor permanent." });
     }
   }
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const ok = await addToBlacklist(targetUser.id, targetUser.username, durationMs, reason, interaction.user.id);
 
   if (ok) {
@@ -973,11 +969,12 @@ async function handleBlacklist(interaction) {
 }
 
 async function handleUnblacklist(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   if (!hasModRole(interaction.member)) {
-    return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   }
   const targetUser = interaction.options.getUser("user");
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const ok = await removeFromBlacklist(targetUser.id);
   if (ok) await interaction.editReply({ content: `✅ ${targetUser.username} is van de blacklist gehaald.` });
   else await interaction.editReply({ content: `❌ ${targetUser.username} staat niet op de blacklist.` });
@@ -1080,16 +1077,16 @@ async function updatePortoEmbed() {
 }
 
 async function handlePortoChange(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   if (!hasModRole(interaction.member)) {
-    return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   }
 
   const freqRaw = interaction.options.getString("frequentie").trim();
   if (!/^\d{1,8}$/.test(freqRaw)) {
-    return interaction.reply({ content: "❌ Gebruik alleen cijfers (max 8), bijv. `123` of `4567`.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Gebruik alleen cijfers (max 8), bijv. `123` of `4567`." });
   }
-
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const old = gangPorto.frequentie;
   gangPorto.frequentie = freqRaw;
@@ -1176,17 +1173,17 @@ async function checkAndLogStatusChange() {
 // ✏️ /editmax
 // ========================================
 async function handleEditMax(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   if (!hasAdminRole(interaction.member)) {
-    return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   }
 
   const aantal = interaction.options.getInteger("aantal");
 
   if (aantal < 1 || aantal > 500) {
-    return interaction.reply({ content: "❌ Kies een getal tussen 1 en 500.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Kies een getal tussen 1 en 500." });
   }
-
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const old = maxGangLeden;
   maxGangLeden = aantal;
@@ -1396,7 +1393,6 @@ async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
   await sendAfwezigheidEmbed(member, reason, fromRaw, tilRaw);
   await updateNonActiefEmbed();
 
-  // Log naar logs-kanaal
   try {
     const logChannel = await client.channels.fetch(ALL_LOGS_CHANNEL_ID);
     if (logChannel && logChannel.isTextBased()) {
@@ -1419,7 +1415,6 @@ async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
     console.error("Afwezig log error:", err.message);
   }
 
-  // Verplaats afwezig-panel naar onderen
   await setupAfwezigPanel();
 
   try {
@@ -1452,6 +1447,8 @@ async function registerAfwezigheid({ guild, userId, reason, fromRaw, tilRaw }) {
 }
 
 async function handleAfwezigheid(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const reason = interaction.options.getString("reason");
   const fromRaw = interaction.options.getString("from");
   const tilRaw = interaction.options.getString("til");
@@ -1463,10 +1460,10 @@ async function handleAfwezigheid(interaction) {
   });
 
   if (!result.ok) {
-    return interaction.reply({ content: result.error, flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: result.error });
   }
 
-  await interaction.reply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.`, flags: MessageFlags.Ephemeral });
+  await interaction.editReply({ content: `✅ Afwezigheid gemeld tot **${tilRaw}**. Je actief-rol is weg, non-actief staat aan.` });
 }
 
 async function handleAfwezigModalSubmit(interaction) {
@@ -1491,13 +1488,15 @@ async function handleAfwezigModalSubmit(interaction) {
 
 // ===== Aanwezig melden =====
 async function handleAanwezig(interaction, userId) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   if (interaction.user.id !== userId) {
-    return interaction.reply({ content: "❌ Deze knop is niet voor jou.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "❌ Deze knop is niet voor jou." });
   }
 
   const entry = afwezigUsers.get(userId);
   if (!entry) {
-    return interaction.reply({ content: "ℹ️ Je bent niet (meer) afwezig gemeld.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: "ℹ️ Je bent niet (meer) afwezig gemeld." });
   }
 
   afwezigUsers.delete(userId);
@@ -1511,21 +1510,13 @@ async function handleAanwezig(interaction, userId) {
 
   await updateNonActiefEmbed();
 
-  await interaction.update({
-    content: "✅ Je bent weer aanwezig gemeld! Je actief-rol is teruggezet.",
-    embeds: [],
-    components: []
-  }).catch(async () => {
-    await interaction.reply({ content: "✅ Je bent weer aanwezig gemeld!", flags: MessageFlags.Ephemeral }).catch(() => {});
-  });
+  await interaction.editReply({ content: "✅ Je bent weer aanwezig gemeld! Je actief-rol is teruggezet." });
 
-  // Log aanwezig
   try {
     const memberName = member ? `${member.user.tag}` : `<@${userId}>`;
     await sendSystemLog("✅ Aanwezig gemeld", `<@${userId}> (${memberName}) heeft zich weer aanwezig gemeld.`);
   } catch (err) {}
 
-  // DM bevestiging
   try {
     const user = await client.users.fetch(userId);
     const dmEmbed = new EmbedBuilder()
@@ -1988,102 +1979,108 @@ async function registerCommands() {
 
 // ===== Command handlers =====
 async function handlePromote(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const steps = interaction.options.getInteger("steps");
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason");
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const currentLevel = getCurrentRankLevel(targetMember);
-  if (currentLevel === 0) return interaction.reply({ content: `❌ ${targetUser.username} heeft geen gang rol!`, flags: MessageFlags.Ephemeral });
+  if (currentLevel === 0) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen gang rol!` });
   let newLevel = Math.min(currentLevel + steps, 8);
-  if (newLevel === currentLevel) return interaction.reply({ content: `❌ Al hoogste rang!`, flags: MessageFlags.Ephemeral });
+  if (newLevel === currentLevel) return interaction.editReply({ content: `❌ Al hoogste rang!` });
   const newRole = interaction.guild.roles.cache.get(getRoleIdByLevel(newLevel));
   try {
     await removeAllGangRoles(targetMember);
     await targetMember.roles.add(newRole);
     await syncActiefRole(targetMember);
     await syncAutoModRole(targetMember);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendPromoEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
     await checkAndLogStatusChange();
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ ${targetUser.username} is gepromoveerd naar **${getRankNameByLevel(newLevel)}**.` });
     await sendLog(interaction, "📈 Promotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleDemote(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const steps = interaction.options.getInteger("steps");
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason");
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const currentLevel = getCurrentRankLevel(targetMember);
-  if (currentLevel === 0) return interaction.reply({ content: `❌ ${targetUser.username} heeft geen gang rol!`, flags: MessageFlags.Ephemeral });
+  if (currentLevel === 0) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen gang rol!` });
   let newLevel = Math.max(currentLevel - steps, 1);
-  if (newLevel === currentLevel) return interaction.reply({ content: `❌ Al laagste rang!`, flags: MessageFlags.Ephemeral });
+  if (newLevel === currentLevel) return interaction.editReply({ content: `❌ Al laagste rang!` });
   const newRole = interaction.guild.roles.cache.get(getRoleIdByLevel(newLevel));
   try {
     await removeAllGangRoles(targetMember);
     await targetMember.roles.add(newRole);
     await syncActiefRole(targetMember);
     await syncAutoModRole(targetMember);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendDemoteEmbed(interaction.guild, targetMember, getRankNameByLevel(currentLevel), getRankNameByLevel(newLevel), reason, steps);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
     await checkAndLogStatusChange();
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ ${targetUser.username} is gedemoveerd naar **${getRankNameByLevel(newLevel)}**.` });
     await sendLog(interaction, "📉 Demotie", `<@${targetUser.id}> van **${getRankNameByLevel(currentLevel)}** naar **${getRankNameByLevel(newLevel)}**.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleWarn(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const number = interaction.options.getInteger("number");
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason");
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const warnRole = interaction.guild.roles.cache.get(number === 1 ? WARN_ROLE_LEVEL1 : WARN_ROLE_LEVEL2);
   try {
     await targetMember.roles.add(warnRole);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendWarnEmbed(targetMember, number === 1 ? "1e Waarschuwing" : "2e Waarschuwing", reason);
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ ${targetUser.username} heeft een waarschuwing gekregen.` });
     await sendLog(interaction, "⚠️ Warn", `<@${targetUser.id}> kreeg waarschuwing ${number}.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleRemoveWarn(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const number = interaction.options.getInteger("number");
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason");
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const warnRoleId = number === 1 ? WARN_ROLE_LEVEL1 : WARN_ROLE_LEVEL2;
-  if (!targetMember.roles.cache.has(warnRoleId)) return interaction.reply({ content: `❌ ${targetUser.username} heeft geen waarschuwing!`, flags: MessageFlags.Ephemeral });
+  if (!targetMember.roles.cache.has(warnRoleId)) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen waarschuwing!` });
   try {
     await targetMember.roles.remove(interaction.guild.roles.cache.get(warnRoleId));
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendRemoveWarnEmbed(targetMember, number === 1 ? "1e Waarschuwing" : "2e Waarschuwing", reason);
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ Waarschuwing ingetrokken.` });
     await sendLog(interaction, "✅ Warn ingetrokken", `<@${targetUser.id}> waarschuwing ${number} ingetrokken.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleAangenomen(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const targetUser = interaction.options.getUser("user");
   const rankName = interaction.options.getString("rank");
   const reason = interaction.options.getString("reason");
-  if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasAdminRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
 
   if (isBlacklisted(targetUser.id)) {
-    return interaction.reply({ content: `❌ ${targetUser.username} staat op de blacklist en kan niet aangenomen worden.`, flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: `❌ ${targetUser.username} staat op de blacklist en kan niet aangenomen worden.` });
   }
 
   if (computeSollicitatieStatus() === "vol") {
-    return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, flags: MessageFlags.Ephemeral });
+    return interaction.editReply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.` });
   }
 
   const rank = ranks.find(r => r.name === rankName);
@@ -2094,7 +2091,6 @@ async function handleAangenomen(interaction) {
     await targetMember.roles.add(interaction.guild.roles.cache.get(LID_ROLE_ID));
     await syncActiefRole(targetMember);
     await syncAutoModRole(targetMember);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendAangenomenEmbed(interaction.guild, targetMember, rank.name, reason);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
@@ -2104,22 +2100,23 @@ async function handleAangenomen(interaction) {
       await targetUser.send({ content: `✅ Gefeliciteerd! Je bent aangenomen bij **GSF** met de rang **${rank.name}**.\nReden: ${reason}` });
     } catch (err) {}
 
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ ${targetUser.username} is aangenomen als **${rank.name}**.` });
     await sendLog(interaction, "✅ Aangenomen", `<@${targetUser.id}> aangenomen als **${rank.name}**.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleOntslagen(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason");
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   try {
     await removeAllGangRoles(targetMember);
     await removeLidRole(targetMember);
     await syncActiefRole(targetMember);
     await syncAutoModRole(targetMember);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await sendOntslagenEmbed(targetMember, reason);
     await safeUpdateList();
     await updateSollicitatieStatusEmbed();
@@ -2129,30 +2126,32 @@ async function handleOntslagen(interaction) {
       await targetUser.send({ content: `❌ Je bent ontslagen bij **GSF**.\nReden: ${reason}` });
     } catch (err) {}
 
-    await interaction.deleteReply().catch(() => null);
+    await interaction.editReply({ content: `✅ ${targetUser.username} is ontslagen.` });
     await sendLog(interaction, "❌ Ontslagen", `<@${targetUser.id}> ontslagen.\nReden: ${reason}`);
-  } catch (error) { if (!interaction.replied) await interaction.reply({ content: `❌ ${error.message}`, flags: MessageFlags.Ephemeral }); }
+  } catch (error) { await interaction.editReply({ content: `❌ ${error.message}` }); }
 }
 
 async function handleRefresh(interaction) {
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   try {
     await updateList();
     await updateSollicitatieStatusEmbed();
     await checkAndLogStatusChange();
-    await interaction.editReply("✅ Ledenlijst bijgewerkt.");
+    await interaction.editReply({ content: "✅ Ledenlijst bijgewerkt." });
     await sendLog(interaction, "🔄 Refresh", `Ledenlijst bijgewerkt.`);
   }
-  catch (err) { await interaction.editReply(`❌ ${err.message}`); }
+  catch (err) { await interaction.editReply({ content: `❌ ${err.message}` }); }
 }
 
 async function handleClear(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const numberInput = interaction.options.getString("number");
   const channel = interaction.channel;
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
-  if (!channel.permissionsFor(client.user)?.has(PermissionFlagsBits.ManageMessages)) return interaction.reply({ content: "❌ Geen permissie!", ephemeral: true });
-  await interaction.deferReply({ ephemeral: true });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
+  if (!channel.permissionsFor(client.user)?.has(PermissionFlagsBits.ManageMessages)) return interaction.editReply({ content: "❌ Geen permissie!" });
   try {
     let deletedSize = 0;
     if (numberInput.toLowerCase() === "all") {
@@ -2178,14 +2177,15 @@ async function handleClear(interaction) {
 }
 
 async function handleMute(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const targetUser = interaction.options.getUser("user");
   const minutes = interaction.options.getInteger("minutes");
   const reason = interaction.options.getString("reason") || "Geen reden";
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const existingMuteRole = interaction.guild.roles.cache.find(r => r.name === "Gemute");
-  if (existingMuteRole && targetMember.roles.cache.has(existingMuteRole.id)) return interaction.reply({ content: "❌ Al gemute!", ephemeral: true });
-  await interaction.deferReply({ ephemeral: true });
+  if (existingMuteRole && targetMember.roles.cache.has(existingMuteRole.id)) return interaction.editReply({ content: "❌ Al gemute!" });
   const success = await applyMute(targetMember, minutes, reason);
   if (success) await interaction.editReply({ content: `✅ ${targetUser.username} is gemute voor ${minutes} min!` });
   else await interaction.editReply({ content: `❌ Mute mislukt.` });
@@ -2193,11 +2193,12 @@ async function handleMute(interaction) {
 }
 
 async function handleUnmute(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const targetUser = interaction.options.getUser("user");
   const reason = interaction.options.getString("reason") || "Geen reden";
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
-  await interaction.deferReply({ ephemeral: true });
   const success = await removeMute(targetMember, reason);
   if (success) await interaction.editReply({ content: `✅ ${targetUser.username} is geunmute!` });
   else await interaction.editReply({ content: `❌ Unmute mislukt.` });
@@ -2205,8 +2206,9 @@ async function handleUnmute(interaction) {
 }
 
 async function handleSollicitatieFormulier(interaction) {
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", flags: MessageFlags.Ephemeral });
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   try {
     await sendSollicitatieFormulier(interaction);
     await interaction.editReply({ content: "✅ Formulier verzonden!" });
@@ -2358,20 +2360,23 @@ async function handleApplicationModalSubmit(interaction, partKey) {
 }
 
 async function handleAppAccept(interaction, userId) {
-  if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
+  await interaction.deferReply({ ephemeral: true });
+
+  if (!hasAdminRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   if (computeSollicitatieStatus() === "vol") {
-    return interaction.reply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.`, ephemeral: true });
+    return interaction.editReply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.` });
   }
-  await interaction.reply({
+  await interaction.editReply({
     content: "Kies de rang voor deze gebruiker in het dropdown menu hieronder:",
-    components: [buildRankSelectMenu(userId)],
-    ephemeral: true
+    components: [buildRankSelectMenu(userId)]
   });
 }
 
 async function handleAppReject(interaction, userId) {
-  if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
-  await interaction.update({ components: [] });
+  await interaction.deferReply({ ephemeral: true });
+
+  if (!hasAdminRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
+
   const targetUser = await client.users.fetch(userId).catch(() => null);
   if (targetUser) {
     await sendOntslagenEmbed(targetUser, "Sollicitatie afgewezen");
@@ -2379,6 +2384,13 @@ async function handleAppReject(interaction, userId) {
       await targetUser.send({ content: `❌ Je sollicitatie bij **GSF** is helaas afgewezen.\nReden: Sollicitatie afgewezen` });
     } catch (err) {}
   }
+
+  try {
+    const msg = await interaction.message;
+    if (msg) await msg.edit({ components: [] });
+  } catch (e) {}
+
+  await interaction.editReply({ content: `❌ Sollicitatie van <@${userId}> is afgewezen.` });
   await interaction.channel.send({ content: `❌ Sollicitatie van <@${userId}> is afgewezen door <@${interaction.user.id}>.` });
   await sendLog(interaction, "❌ Sollicitatie afgewezen", `<@${userId}> afgewezen.`);
 }
@@ -2432,19 +2444,23 @@ async function handleAppRankSelect(interaction, userId) {
 }
 
 async function handleTicketClose(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const ticket = activeTickets.get(interaction.channelId);
-  if (!ticket) return interaction.reply({ content: 'Geen actief ticket.', ephemeral: true });
+  if (!ticket) return interaction.editReply({ content: 'Geen actief ticket.' });
   const isOwner = ticket.userId === interaction.user.id;
   const isStaff = interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID);
-  if (!isOwner && !isStaff) return interaction.reply({ content: 'Je mag dit ticket niet sluiten.', ephemeral: true });
-  await interaction.reply({ content: '🔒 Ticket wordt gesloten en transcript wordt verstuurd...' });
+  if (!isOwner && !isStaff) return interaction.editReply({ content: 'Je mag dit ticket niet sluiten.' });
+
+  await interaction.editReply({ content: '🔒 Ticket wordt gesloten en transcript wordt verstuurd...' });
   await closeTicket(interaction.channel, interaction.user.id);
   await sendLog(interaction, "🔒 Ticket gesloten", `Ticket <#${interaction.channelId}> gesloten.`);
 }
 
 async function handleAdd(interaction) {
-  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.reply({ content: '❌ Geen permissie.', ephemeral: true });
   await interaction.deferReply({ ephemeral: true });
+
+  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.editReply({ content: '❌ Geen permissie.' });
   const ticket = activeTickets.get(interaction.channelId);
   if (!ticket) return interaction.editReply({ content: 'Geen actief ticket.' });
   const targetUser = interaction.options.getUser('user');
@@ -2462,8 +2478,9 @@ async function handleAdd(interaction) {
 }
 
 async function handleRemove(interaction) {
-  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.reply({ content: '❌ Geen permissie.', ephemeral: true });
   await interaction.deferReply({ ephemeral: true });
+
+  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.editReply({ content: '❌ Geen permissie.' });
   const ticket = activeTickets.get(interaction.channelId);
   if (!ticket) return interaction.editReply({ content: 'Geen actief ticket.' });
   const targetUser = interaction.options.getUser('user');
@@ -2480,17 +2497,21 @@ async function handleRemove(interaction) {
 }
 
 async function handleClose(interaction) {
-  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.reply({ content: '❌ Geen permissie.', ephemeral: true });
+  await interaction.deferReply({ ephemeral: true });
+
+  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.editReply({ content: '❌ Geen permissie.' });
   const ticket = activeTickets.get(interaction.channelId);
-  if (!ticket) return interaction.reply({ content: 'Geen actief ticket.', ephemeral: true });
-  await interaction.reply({ content: '🔒 Ticket wordt gesloten en transcript wordt verstuurd...' });
+  if (!ticket) return interaction.editReply({ content: 'Geen actief ticket.' });
+
+  await interaction.editReply({ content: '🔒 Ticket wordt gesloten en transcript wordt verstuurd...' });
   await closeTicket(interaction.channel, interaction.user.id);
   await sendLog(interaction, "🔒 Ticket gesloten", `Ticket <#${interaction.channelId}> gesloten via /close.`);
 }
 
 async function handleRename(interaction) {
-  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.reply({ content: '❌ Geen permissie.', ephemeral: true });
   await interaction.deferReply({ ephemeral: true });
+
+  if (!interaction.member.roles.cache.has(TICKET_SUPPORT_ROLE_ID)) return interaction.editReply({ content: '❌ Geen permissie.' });
   if (!activeTickets.has(interaction.channelId)) return interaction.editReply({ content: 'Geen actief ticket.' });
   const newName = interaction.options.getString('name').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 100);
   if (!newName) return interaction.editReply({ content: '⚠️ Ongeldige naam.' });
@@ -2503,8 +2524,9 @@ async function handleRename(interaction) {
 }
 
 async function handleTicketPanel(interaction) {
-  if (!hasModRole(interaction.member)) return interaction.reply({ content: '❌ Geen permissie.', ephemeral: true });
   await interaction.deferReply({ ephemeral: true });
+
+  if (!hasModRole(interaction.member)) return interaction.editReply({ content: '❌ Geen permissie.' });
   try {
     await setupTicketPanel();
     await interaction.editReply({ content: '✅ Ticket panel geplaatst!' });
@@ -2597,79 +2619,94 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (interaction.isButton()) {
-    if (interaction.customId.startsWith('app_part')) {
-      const partKey = interaction.customId.split('_')[1];
-      return await handleApplicationPartOpen(interaction, partKey);
+  try {
+    if (interaction.isButton()) {
+      if (interaction.customId.startsWith('app_part')) {
+        const partKey = interaction.customId.split('_')[1];
+        return await handleApplicationPartOpen(interaction, partKey);
+      }
+      if (interaction.customId === 'ticket_close') {
+        return await handleTicketClose(interaction);
+      }
+      if (interaction.customId.startsWith('app_accept_')) {
+        const userId = interaction.customId.split('_')[2];
+        return await handleAppAccept(interaction, userId);
+      }
+      if (interaction.customId.startsWith('app_reject_')) {
+        const userId = interaction.customId.split('_')[2];
+        return await handleAppReject(interaction, userId);
+      }
+      if (interaction.customId.startsWith('aanwezig_')) {
+        const userId = interaction.customId.split('_')[1];
+        return await handleAanwezig(interaction, userId);
+      }
+      if (interaction.customId === 'afwezig_melden_open') {
+        return await interaction.showModal(buildAfwezigModal());
+      }
     }
-    if (interaction.customId === 'ticket_close') {
-      return await handleTicketClose(interaction);
-    }
-    if (interaction.customId.startsWith('app_accept_')) {
-      const userId = interaction.customId.split('_')[2];
-      return await handleAppAccept(interaction, userId);
-    }
-    if (interaction.customId.startsWith('app_reject_')) {
-      const userId = interaction.customId.split('_')[2];
-      return await handleAppReject(interaction, userId);
-    }
-    if (interaction.customId.startsWith('aanwezig_')) {
-      const userId = interaction.customId.split('_')[1];
-      return await handleAanwezig(interaction, userId);
-    }
-    if (interaction.customId === 'afwezig_melden_open') {
-      return await interaction.showModal(buildAfwezigModal());
-    }
-  }
 
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === 'ticket_category_select') {
-      return await handleTicketCategorySelect(interaction);
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'ticket_category_select') {
+        return await handleTicketCategorySelect(interaction);
+      }
+      if (interaction.customId.startsWith('app_rank_select_')) {
+        const userId = interaction.customId.split('_')[3];
+        return await handleAppRankSelect(interaction, userId);
+      }
     }
-    if (interaction.customId.startsWith('app_rank_select_')) {
-      const userId = interaction.customId.split('_')[3];
-      return await handleAppRankSelect(interaction, userId);
-    }
-  }
 
-  if (interaction.isModalSubmit()) {
-    if (interaction.customId === 'afwezig_melden_modal') {
-      return await handleAfwezigModalSubmit(interaction);
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId === 'afwezig_melden_modal') {
+        return await handleAfwezigModalSubmit(interaction);
+      }
+      if (interaction.customId.startsWith('app_modal_')) {
+        const partKey = interaction.customId.replace('app_modal_', '');
+        return await handleApplicationModalSubmit(interaction, partKey);
+      }
     }
-    if (interaction.customId.startsWith('app_modal_')) {
-      const partKey = interaction.customId.replace('app_modal_', '');
-      return await handleApplicationModalSubmit(interaction, partKey);
-    }
-  }
 
-  if (interaction.isChatInputCommand()) {
-    const name = interaction.commandName;
-    if (name === "refresh") await handleRefresh(interaction);
-    else if (name === "promo") await handlePromote(interaction);
-    else if (name === "demote") await handleDemote(interaction);
-    else if (name === "warn") await handleWarn(interaction);
-    else if (name === "removewarn") await handleRemoveWarn(interaction);
-    else if (name === "aangenomen") await handleAangenomen(interaction);
-    else if (name === "ontslagen") await handleOntslagen(interaction);
-    else if (name === "afwezig") await handleAfwezigheid(interaction);
-    else if (name === "clear") await handleClear(interaction);
-    else if (name === "mute") await handleMute(interaction);
-    else if (name === "unmute") await handleUnmute(interaction);
-    else if (name === "sollicitatieformulier") await handleSollicitatieFormulier(interaction);
-    else if (name === "add") await handleAdd(interaction);
-    else if (name === "remove") await handleRemove(interaction);
-    else if (name === "close") await handleClose(interaction);
-    else if (name === "rename") await handleRename(interaction);
-    else if (name === "ticketpanel") await handleTicketPanel(interaction);
-    else if (name === "blacklist") await handleBlacklist(interaction);
-    else if (name === "unblacklist") await handleUnblacklist(interaction);
-    else if (name === "portochange") await handlePortoChange(interaction);
-    else if (name === "editmax") await handleEditMax(interaction);
-    return;
+    if (interaction.isChatInputCommand()) {
+      const name = interaction.commandName;
+      if (name === "refresh") await handleRefresh(interaction);
+      else if (name === "promo") await handlePromote(interaction);
+      else if (name === "demote") await handleDemote(interaction);
+      else if (name === "warn") await handleWarn(interaction);
+      else if (name === "removewarn") await handleRemoveWarn(interaction);
+      else if (name === "aangenomen") await handleAangenomen(interaction);
+      else if (name === "ontslagen") await handleOntslagen(interaction);
+      else if (name === "afwezig") await handleAfwezigheid(interaction);
+      else if (name === "clear") await handleClear(interaction);
+      else if (name === "mute") await handleMute(interaction);
+      else if (name === "unmute") await handleUnmute(interaction);
+      else if (name === "sollicitatieformulier") await handleSollicitatieFormulier(interaction);
+      else if (name === "add") await handleAdd(interaction);
+      else if (name === "remove") await handleRemove(interaction);
+      else if (name === "close") await handleClose(interaction);
+      else if (name === "rename") await handleRename(interaction);
+      else if (name === "ticketpanel") await handleTicketPanel(interaction);
+      else if (name === "blacklist") await handleBlacklist(interaction);
+      else if (name === "unblacklist") await handleUnblacklist(interaction);
+      else if (name === "portochange") await handlePortoChange(interaction);
+      else if (name === "editmax") await handleEditMax(interaction);
+      return;
+    }
+  } catch (err) {
+    // Vang net voor Unknown interaction errors — log ze maar crash niet
+    if (err?.code === 10062) {
+      console.log("⚠️ Interactie verlopen (Unknown interaction) — genegeerd.");
+      return;
+    }
+    console.error("Interaction error:", err);
   }
 });
 
-process.on("unhandledRejection", (reason) => console.error("Unhandled rejection:", reason));
-process.on("uncaughtException", (err) => console.error("Uncaught exception:", err));
+process.on("unhandledRejection", (reason) => {
+  if (reason?.code === 10062) return;
+  console.error("Unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  if (err?.code === 10062) return;
+  console.error("Uncaught exception:", err);
+});
 
 client.login(TOKEN);
