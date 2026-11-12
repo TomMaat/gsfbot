@@ -147,7 +147,7 @@ const LID_ROLE_ID = "1570478482192859188";
 const LID_NAME_PREFIX = "𝔐𝔎13 | ";
 const PLACEHOLDER_IMAGE = "https://cdn.discordapp.com/attachments/1545887290738614449/1570497248599478463/5f2fccfa-6414-40c3-a771-6fcc6946eb6a.png?ex=6af74f0a&is=6af5fd8a&hm=2134b6b2a352ccfcd10428ab6ba6915fea3708eb525f7a045147ca7e7a5d1a73&";
 
-// ===== GSF rollen =====
+// ===== Gang rollen =====
 const ACTIEF_ROLE_ID = "1570478487251324948";
 const AFWEZIG_ROLE_ID = "1570478488324935733";
 
@@ -409,7 +409,7 @@ async function buildEmbed() {
     body += `\n`;
   }
   const description = `**Totaal: ${uniqueMembers.size} leden**\n\n${body}`;
-  return new EmbedBuilder().setTitle("GSF Ledenlijst").setColor(EMBED_COLOR).setDescription(description.slice(0, 4096)).setFooter({ text: FOOTER_TEXT }).setTimestamp();
+  return new EmbedBuilder().setTitle("MK-13 Ledenlijst").setColor(EMBED_COLOR).setDescription(description.slice(0, 4096)).setFooter({ text: FOOTER_TEXT }).setTimestamp();
 }
 
 async function updateList() {
@@ -504,7 +504,7 @@ async function sendWelcomeMessage(member) {
     const memberCount = member.guild.memberCount;
     const embed = new EmbedBuilder()
       .setTitle("👋 WELKOM!")
-      .setDescription(`Welkom ${memberLink(member.id, member.displayName)} in de **GSF** Discord server!`)
+      .setDescription(`Welkom ${memberLink(member.id, member.displayName)} in de **MK-13** Discord server!`)
       .addFields(
         { name: "📊 Totaal aantal leden", value: `${memberCount}`, inline: true },
         { name: "📅 Datum", value: getCurrentDate(), inline: true }
@@ -634,7 +634,7 @@ async function sendUnmuteEmbed(user, reason) {
 async function sendSollicitatieFormulier(interaction) {
   const guild = interaction.guild;
   const embed = new EmbedBuilder()
-    .setAuthor({ name: "GSF", iconURL: getServerIcon(guild) })
+    .setAuthor({ name: "MK-13", iconURL: getServerIcon(guild) })
     .setTitle("📝 Sollicitatieformulier")
     .setDescription(
       "Vul alle vragen **eerlijk en volledig** in. We verwachten serieuze antwoorden en respect voor onze gang.\n\n" +
@@ -644,7 +644,7 @@ async function sendSollicitatieFormulier(interaction) {
     .addFields(
       { name: "**01 — Wie ben je?**", value: "> **Naam:**\n> **Leeftijd:**\n> **Discord:**\n> **IC-naam:**", inline: false },
       { name: "**02 — Ervaring**", value: "> **Ervaring met FiveM/Serious RP:**\n> **Hoeveel uur per dag actief?**", inline: false },
-      { name: "**03 — Motivatie**", value: "> **Waarom wil je bij GSF?**\n> **Wat kun jij toevoegen?**\n> **Ben je bekend met de serverregels?**", inline: false }
+      { name: "**03 — Motivatie**", value: "> **Waarom wil je bij MK-13?**\n> **Wat kun jij toevoegen?**\n> **Ben je bekend met de serverregels?**", inline: false }
     )
     .setFooter({ text: FOOTER_TEXT, iconURL: getServerIcon(guild) })
     .setTimestamp();
@@ -772,7 +772,7 @@ async function loadData() {
   try {
     if (!GIST_ID) {
       const { data } = await octokit.gists.create({
-        description: "GSF Bot — Database",
+        description: "MK-13 Bot — Database",
         public: false,
         files: { [GIST_FILENAME]: { content: JSON.stringify({ blacklist: {}, gangporto: null, afwezig: {}, maxGangLeden: DEFAULT_MAX_GANG_LEDEN }, null, 2) } },
       });
@@ -915,7 +915,7 @@ async function buildBlacklistEmbed() {
 
   const description = `**Totaal: ${entries.length} geblacklist**\n\n${body}`;
   return new EmbedBuilder()
-    .setTitle("🚫 GSF Blacklist")
+    .setTitle("🚫 MK-13 Blacklist")
     .setColor(EMBED_COLOR)
     .setDescription(description.slice(0, 4096))
     .setFooter({ text: FOOTER_TEXT })
@@ -1091,7 +1091,7 @@ async function removeMute(member, reason = "Handmatig") {
 // ========================================
 function buildPortoEmbed() {
   return new EmbedBuilder()
-    .setTitle("📻 GSF Gang Porto")
+    .setTitle("📻 MK-13 Gang Porto")
     .setColor(EMBED_COLOR)
     .setDescription(
       "**Huidige frequentie**\n" +
@@ -1582,7 +1582,7 @@ async function handleAanwezig(interaction, userId) {
       .setDescription(
         `Je bent weer **aanwezig** gemeld!\n\n` +
         `Je non-actief-rol is weggehaald en je actief-rol is teruggezet.\n` +
-        `Welkom terug bij **GSF**!`
+        `Welkom terug bij **MK-13**!`
       )
       .setFooter({ text: FOOTER_TEXT })
       .setTimestamp();
@@ -1614,7 +1614,7 @@ async function checkAfwezigExpiry() {
             .setDescription(
               `Je afwezigheid is **automatisch beëindigd** op de einddatum.\n\n` +
               `Je non-actief-rol is weggehaald en je actief-rol is teruggezet.\n` +
-              `Welkom terug bij **GSF**!`
+              `Welkom terug bij **MK-13**!`
             )
             .setFooter({ text: FOOTER_TEXT })
             .setTimestamp();
@@ -1797,7 +1797,7 @@ function buildTicketPanelEmbed() {
   return new EmbedBuilder()
     .setTitle('🎫 Tickets')
     .setColor(EMBED_COLOR)
-    .setDescription('Kies hieronder een categorie om een ticket te openen.\n\n> 📝 **Sollicitatie** — Solliciteer bij GSF\n> 🤝 **Partner** — Vraag een partnership aan')
+    .setDescription('Kies hieronder een categorie om een ticket te openen.\n\n> 📝 **Sollicitatie** — Solliciteer bij MK-13\n> 🤝 **Partner** — Vraag een partnership aan')
     .setFooter({ text: FOOTER_TEXT })
     .setTimestamp();
 }
@@ -1808,7 +1808,7 @@ function buildTicketPanelMenu() {
       .setCustomId('ticket_category_select')
       .setPlaceholder('Kies een categorie...')
       .addOptions([
-        { label: 'Sollicitatie', value: 'application', emoji: '📝', description: 'Solliciteer bij GSF' },
+        { label: 'Sollicitatie', value: 'application', emoji: '📝', description: 'Solliciteer bij MK-13' },
         { label: 'Partner', value: 'partner', emoji: '🤝', description: 'Vraag een partnership aan' },
       ])
   );
@@ -1834,7 +1834,7 @@ function buildApplicationStartEmbed() {
     .setTitle('📝 Sollicitatie Formulier')
     .setColor(EMBED_COLOR)
     .setDescription(
-      'Welkom bij je sollicitatie voor **GSF**!\n\n' +
+      'Welkom bij je sollicitatie voor **MK-13**!\n\n' +
       'Vul de 3 delen in door op de knoppen hieronder te klikken.\n\n' +
       '👤 **Deel 1** — Wie ben je?\n' +
       '🎮 **Deel 2** — Ervaring\n' +
@@ -1896,7 +1896,7 @@ function buildFinalApplicationEmbed(userId, answers) {
     .addFields(
       { name: '👤 01 — Wie ben je?', value: `**Naam:** ${p1.naam || '-'}\n**Leeftijd:** ${p1.leeftijd || '-'}\n**Discord:** ${p1.discord || '-'}\n**IC Naam:** ${p1.ic_naam || '-'}`, inline: false },
       { name: '🎮 02 — Ervaring', value: `**FiveM/Serious RP:** ${p2.rp_ervaring || '-'}\n**Activiteit:** ${p2.activiteit || '-'}`, inline: false },
-      { name: '💼 03 — Motivatie', value: `**Waarom GSF:** ${p3.waarom || '-'}\n**Toevoeging:** ${p3.toevoegen || '-'}\n**Bekend met regels:** ${p3.serverregels || '-'}`, inline: false }
+      { name: '💼 03 — Motivatie', value: `**Waarom MK-13:** ${p3.waarom || '-'}\n**Toevoeging:** ${p3.toevoegen || '-'}\n**Bekend met regels:** ${p3.serverregels || '-'}`, inline: false }
     )
     .setFooter({ text: FOOTER_TEXT })
     .setTimestamp();
@@ -1934,7 +1934,7 @@ async function setupCommandsEmbed() {
     const embed = new EmbedBuilder()
       .setTitle('📚 Bot Commands Overzicht')
       .setColor(EMBED_COLOR)
-      .setDescription('Hieronder vind je een overzicht van alle beschikbare commands voor de GSF bot.')
+      .setDescription('Hieronder vind je een overzicht van alle beschikbare commands voor de MK-13 bot.')
       .addFields(
         {
           name: '🛠️ Algemeen & Beheer',
@@ -1997,7 +1997,7 @@ async function registerCommands() {
     new SlashCommandBuilder().setName("clear").setDescription("Verwijder berichten").addStringOption(o => o.setName("number").setDescription("Aantal of 'all'").setRequired(true)),
     new SlashCommandBuilder().setName("mute").setDescription("Mute een lid").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addIntegerOption(o => o.setName("minutes").setDescription("Minuten").setRequired(true).setMinValue(1).setMaxValue(1440)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(false)),
     new SlashCommandBuilder().setName("unmute").setDescription("Unmute een lid").addUserOption(o => o.setName("user").setDescription("Lid").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reden").setRequired(false)),
-    new SlashCommandBuilder().setName("sollicitatieformulier").setDescription("Stuur het GSF sollicitatieformulier (alleen mods)"),
+    new SlashCommandBuilder().setName("sollicitatieformulier").setDescription("Stuur het MK-13 sollicitatieformulier (alleen mods)"),
     new SlashCommandBuilder().setName("add").setDescription("Voeg een gebruiker toe aan dit ticket").addUserOption(o => o.setName("user").setDescription("Gebruiker").setRequired(true)),
     new SlashCommandBuilder().setName("remove").setDescription("Verwijder een gebruiker uit dit ticket").addUserOption(o => o.setName("user").setDescription("Gebruiker").setRequired(true)),
     new SlashCommandBuilder().setName("close").setDescription("Sluit dit ticket"),
@@ -2154,7 +2154,7 @@ async function handleAangenomen(interaction) {
     await checkAndLogStatusChange();
 
     try {
-      await targetUser.send({ content: `✅ Gefeliciteerd! Je bent aangenomen bij **GSF** met de rang **${rank.name}**.\nReden: ${reason}` });
+      await targetUser.send({ content: `✅ Gefeliciteerd! Je bent aangenomen bij **MK-13** met de rang **${rank.name}**.\nReden: ${reason}` });
     } catch (err) {}
 
     await interaction.editReply({ content: `✅ ${targetUser.username} is aangenomen als **${rank.name}**.` });
@@ -2180,7 +2180,7 @@ async function handleOntslagen(interaction) {
     await checkAndLogStatusChange();
 
     try {
-      await targetUser.send({ content: `❌ Je bent ontslagen bij **GSF**.\nReden: ${reason}` });
+      await targetUser.send({ content: `❌ Je bent ontslagen bij **MK-13**.\nReden: ${reason}` });
     } catch (err) {}
 
     await interaction.editReply({ content: `✅ ${targetUser.username} is ontslagen.` });
@@ -2438,7 +2438,7 @@ async function handleAppReject(interaction, userId) {
   if (targetUser) {
     await sendOntslagenEmbed(targetUser, "Sollicitatie afgewezen");
     try {
-      await targetUser.send({ content: `❌ Je sollicitatie bij **GSF** is helaas afgewezen.\nReden: Sollicitatie afgewezen` });
+      await targetUser.send({ content: `❌ Je sollicitatie bij **MK-13** is helaas afgewezen.\nReden: Sollicitatie afgewezen` });
     } catch (err) {}
   }
 
@@ -2488,7 +2488,7 @@ async function handleAppRankSelect(interaction, userId) {
 
     try {
       await targetUser.send({
-        content: `✅ Gefeliciteerd! Je bent aangenomen bij **GSF** met de rang **${rank.name}**.\nReden: ${reason}`
+        content: `✅ Gefeliciteerd! Je bent aangenomen bij **MK-13** met de rang **${rank.name}**.\nReden: ${reason}`
       });
     } catch (err) {}
 
