@@ -50,6 +50,10 @@ const SOLICITATIE_STATUS_CHANNEL_ID = "1570478553534046238";
 const GANG_PORTO_CHANNEL_ID = "1570478573796720771";
 const NON_ACTIEF_CHANNEL_ID = "1570478598782062603";
 
+// ===== Verify =====
+const VERIFY_CHANNEL_ID = "1570478543224307865";
+const VERIFY_ROLE_ID = "1570478508830887997"; // de rol die je krijgt na verificatie
+
 // ===== Ticket settings =====
 const TICKET_PANEL_CHANNEL_ID = "1570478554788139128";
 const TICKET_SUPPORT_ROLE_ID = "1570478474244784160";
@@ -58,9 +62,6 @@ const TICKET_TRANSCRIPT_CHANNEL_ID = "1570478609716609204";
 // ===== Warn roles =====
 const WARN_ROLE_LEVEL1 = "1570478498295054416";
 const WARN_ROLE_LEVEL2 = "1570478499456880682";
-
-// ===== Auto-role bij join =====
-const AUTO_ROLE_ID = "1570478508830887997";
 
 // ===== Blacklist settings =====
 const BLACKLIST_CHANNEL_ID = "1570478561679376396";
@@ -435,6 +436,63 @@ async function updateList() {
 
 async function safeUpdateList() {
   try { await updateList(); } catch (err) { console.error("Failed to update gang list:", err); }
+}
+
+// ===== VERIFY =====
+async function setupVerifyPanel() {
+  try {
+    const channel = await client.channels.fetch(VERIFY_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+
+    try {
+      const fetched = await channel.messages.fetch({ limit: 50 });
+      const botMsgs = fetched.filter(m => m.author.id === client.user.id);
+      for (const m of botMsgs.values()) await m.delete().catch(() => {});
+    } catch {}
+
+    const embed = new EmbedBuilder()
+      .setTitle("✅ Verificatie")
+      .setColor(EMBED_COLOR)
+      .setDescription(
+        "Klik op de knop hieronder om je te **verifiëren**.\n\n" +
+        "Zodra je geverifieerd bent, krijg je toegang tot de server."
+      )
+      .setFooter({ text: FOOTER_TEXT })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("verify_button")
+        .setLabel("Verifiëren")
+        .setEmoji("✅")
+        .setStyle(ButtonStyle.Success)
+    );
+
+    await channel.send({ embeds: [embed], components: [row] });
+    console.log("✅ Verify panel geplaatst");
+  } catch (err) {
+    console.error("Verify panel error:", err.message);
+  }
+}
+
+async function handleVerifyButton(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const guild = interaction.guild;
+  const member = await guild.members.fetch(interaction.user.id);
+
+  if (member.roles.cache.has(VERIFY_ROLE_ID)) {
+    return interaction.editReply({ content: "✅ Je bent al geverifieerd!" });
+  }
+
+  try {
+    await member.roles.add(VERIFY_ROLE_ID, "Verificatie via knop");
+    await interaction.editReply({ content: "✅ Je bent nu geverifieerd! Welkom op de server." });
+    await sendSystemLog("✅ Verificatie", `<@${member.id}> heeft zich geverifieerd.`);
+  } catch (err) {
+    console.error("Verify error:", err);
+    await interaction.editReply({ content: "❌ Er ging iets mis bij het verifiëren. Neem contact op met een admin." });
+  }
 }
 
 // ===== WELKOM =====
@@ -2563,6 +2621,7 @@ client.once("ready", async () => {
   await setupTicketPanel();
   await setupCommandsEmbed();
   await setupAfwezigPanel();
+  await setupVerifyPanel();
 
   await loadData();
   await updateBlacklistEmbed();
@@ -2577,9 +2636,7 @@ client.once("ready", async () => {
 });
 
 client.on("guildMemberAdd", async (member) => {
-  try {
-    if (!member.user.bot) await member.roles.add(AUTO_ROLE_ID, "Auto-role bij join");
-  } catch (err) { console.error("Auto-role error:", err); }
+  // Geen auto-role meer: gebruiker moet eerst verifiëren via het verify-paneel.
   await sendWelcomeMessage(member);
 });
 
@@ -2620,6 +2677,9 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isButton()) {
+      if (interaction.customId === 'verify_button') {
+        return await handleVerifyButton(interaction);
+      }
       if (interaction.customId.startsWith('app_part')) {
         const partKey = interaction.customId.split('_')[1];
         return await handleApplicationPartOpen(interaction, partKey);
@@ -2690,7 +2750,6 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
   } catch (err) {
-    // Vang net voor Unknown interaction errors — log ze maar crash niet
     if (err?.code === 10062) {
       console.log("⚠️ Interactie verlopen (Unknown interaction) — genegeerd.");
       return;
