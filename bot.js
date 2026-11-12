@@ -33,40 +33,40 @@ if (!TOKEN) {
 }
 
 // ===== Kleuren =====
-const EMBED_COLOR = 0x2ecc71;
+const EMBED_COLOR = 0x000000;
 
 // ===== Kanaal IDs =====
-const WELCOME_CHANNEL_ID = "1567269934747090979";
-const GANG_LIST_CHANNEL_ID = "1568002909243711488";
-const COMMANDS_INFO_CHANNEL_ID = "1568003929265021000";
-const WARN_CHANNEL_ID = "1568004154801127464";
-const PROMO_CHANNEL_ID = "1567269935753990238";
-const DEMOTE_CHANNEL_ID = "1567269935753990239";
-const ALL_LOGS_CHANNEL_ID = "1568004384602853536";
-const AFWEZIGHEID_CHANNEL_ID = "1567269935753990243";
-const AANGENOMEN_CHANNEL_ID = "1567901313168048198";
-const ONTSLAGEN_CHANNEL_ID = "1567901328305426542";
-const SOLICITATIE_STATUS_CHANNEL_ID = "1567899535861354618";
-const GANG_PORTO_CHANNEL_ID = "1567269935527366695";
-const NON_ACTIEF_CHANNEL_ID = "1568028895310127154";
+const WELCOME_CHANNEL_ID = "1570478541592723577";
+const GANG_LIST_CHANNEL_ID = "1570478555966611466";
+const COMMANDS_INFO_CHANNEL_ID = "1570478613571174410";
+const WARN_CHANNEL_ID = "1570478584940855317";
+const PROMO_CHANNEL_ID = "1570478581467844790";
+const DEMOTE_CHANNEL_ID = "1570478583401545839";
+const ALL_LOGS_CHANNEL_ID = "1570478610857590927";
+const AFWEZIGHEID_CHANNEL_ID = "1570478590406037654";
+const AANGENOMEN_CHANNEL_ID = "1570478559233966282";
+const ONTSLAGEN_CHANNEL_ID = "1570478560450322643";
+const SOLICITATIE_STATUS_CHANNEL_ID = "1570478553534046238";
+const GANG_PORTO_CHANNEL_ID = "1570478573796720771";
+const NON_ACTIEF_CHANNEL_ID = "1570478598782062603";
 
 // ===== Ticket settings =====
-const TICKET_PANEL_CHANNEL_ID = "1567269934747090980";
-const TICKET_SUPPORT_ROLE_ID = "1567269932918378603";
-const TICKET_TRANSCRIPT_CHANNEL_ID = "1568004866507276389";
+const TICKET_PANEL_CHANNEL_ID = "1570478554788139128";
+const TICKET_SUPPORT_ROLE_ID = "1570478474244784160";
+const TICKET_TRANSCRIPT_CHANNEL_ID = "1570478609716609204";
 
 // ===== Warn roles =====
-const WARN_ROLE_LEVEL1 = "1567269932515852290";
-const WARN_ROLE_LEVEL2 = "1567269932515852289";
+const WARN_ROLE_LEVEL1 = "1570478498295054416";
+const WARN_ROLE_LEVEL2 = "1570478499456880682";
 
 // ===== Auto-role bij join =====
-const AUTO_ROLE_ID = "1567269932515852291";
+const AUTO_ROLE_ID = "1570478508830887997";
 
 // ===== Blacklist settings =====
-const BLACKLIST_CHANNEL_ID = "1568005409988415518";
+const BLACKLIST_CHANNEL_ID = "1570478561679376396";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 let GIST_ID = process.env.GIST_ID || null;
-const GIST_FILENAME = "gsf.json";
+const GIST_FILENAME = "mk13.json";
 
 // ===== Overige settings =====
 const ROLE_CHANGE_DEBOUNCE_MS = 2000;
@@ -80,7 +80,7 @@ const TICKET_CATEGORIES = {
   application: {
     name: "Sollicitatie",
     prefix: "sollicitatie",
-    categoryId: "1568009181795983412",
+    categoryId: "1570478534344839198",
     emoji: "📝",
     color: EMBED_COLOR,
     isApplication: true,
@@ -88,7 +88,7 @@ const TICKET_CATEGORIES = {
   partner: {
     name: "Partner",
     prefix: "partner",
-    categoryId: "1568009222833045645",
+    categoryId: "1570478540133109892",
     emoji: "🤝",
     color: EMBED_COLOR,
   },
@@ -102,15 +102,15 @@ const APPLICATION_PARTS = {
     questions: [
       { id: "naam", label: "Naam", placeholder: "Vul je naam in", style: TextInputStyle.Short, max: 100 },
       { id: "leeftijd", label: "Leeftijd", placeholder: "Vul je leeftijd in", style: TextInputStyle.Short, max: 10 },
-      { id: "discord", label: "Discord", placeholder: "Vul je Discord tag in", style: TextInputStyle.Short, max: 100 },
-      { id: "ic_naam", label: "IC-naam", placeholder: "Vul je IC-naam in", style: TextInputStyle.Short, max: 100 }
+      { id: "discord", label: "Discord", placeholder: "Vul je Discord naam in", style: TextInputStyle.Short, max: 100 },
+      { id: "ic_naam", label: "IC-naam", placeholder: "Vul je in-game naam in", style: TextInputStyle.Short, max: 100 }
     ]
   },
   part2: {
     title: "02 — Ervaring",
     emoji: "🎮",
     questions: [
-      { id: "rp_ervaring", label: "Ervaring met FiveM/Serious RP", placeholder: "Vertel kort over je ervaring", style: TextInputStyle.Paragraph, max: 300 },
+      { id: "rp_ervaring", label: "Ervaring met FiveM RP", placeholder: "Vertel kort over je ervaring", style: TextInputStyle.Paragraph, max: 300 },
       { id: "activiteit", label: "Hoeveel uur per dag actief?", placeholder: "Bijv. 4 uur", style: TextInputStyle.Short, max: 50 }
     ]
   },
@@ -118,9 +118,9 @@ const APPLICATION_PARTS = {
     title: "03 — Motivatie",
     emoji: "💼",
     questions: [
-      { id: "waarom", label: "Waarom wil je bij GSF?", placeholder: "Leg kort uit...", style: TextInputStyle.Paragraph, max: 300 },
-      { id: "toevoegen", label: "Wat kun jij toevoegen?", placeholder: "Leg kort uit...", style: TextInputStyle.Paragraph, max: 300 },
-      { id: "serverregels", label: "Ben je bekend met de serverregels?", placeholder: "Ja of Nee", style: TextInputStyle.Short, max: 10 }
+      { id: "waarom", label: "Waarom wil je bij MK-13?", placeholder: "Leg kort uit...", style: TextInputStyle.Paragraph, max: 300 },
+      { id: "toevoegen", label: "Wat kun jij toevoegen in de gang?", placeholder: "Leg kort uit...", style: TextInputStyle.Paragraph, max: 300 },
+      { id: "serverregels", label: "Ben je bekend met de apv?", placeholder: "Ja of Nee", style: TextInputStyle.Short, max: 10 }
     ]
   }
 };
@@ -140,32 +140,31 @@ const SUPPORT_TICKET_PERMS = [
 ];
 
 // ===== Role settings =====
-const ADMIN_ROLE_ID = "1567269932918378603";
-const MOD_ROLE_ID = "1567269932918378603";
-const LID_ROLE_ID = "1567269932918378602";
-const LID_NAME_PREFIX = "𝕲𝕾𝕱 | ";
-const PLACEHOLDER_IMAGE = "https://cdn.discordapp.com/attachments/1567554042039771136/1568002571287662792/gsf.webp?ex=6aee3bb1&is=6aecea31&hm=aee9006b8b0e2009a7a1f4ebb27196b322c71595483d771e285eab9286dbd691&";
+const ADMIN_ROLE_ID = "1570478474244784160";
+const MOD_ROLE_ID = "1570478474244784160";
+const LID_ROLE_ID = "1570478482192859188";
+const LID_NAME_PREFIX = "𝔐𝔎13 | ";
+const PLACEHOLDER_IMAGE = "https://cdn.discordapp.com/attachments/1545887290738614449/1570497248599478463/5f2fccfa-6414-40c3-a771-6fcc6946eb6a.png?ex=6af74f0a&is=6af5fd8a&hm=2134b6b2a352ccfcd10428ab6ba6915fea3708eb525f7a045147ca7e7a5d1a73&";
 
 // ===== GSF rollen =====
-const ACTIEF_ROLE_ID = "1567269932918378607";
-const AFWEZIG_ROLE_ID = "1567269932918378601";
+const ACTIEF_ROLE_ID = "1570478487251324948";
+const AFWEZIG_ROLE_ID = "1570478488324935733";
 
-const FOOTER_TEXT = "GSF • Den Haag Roleplay";
+const FOOTER_TEXT = "MK-13 • Today Roleplay";
 
 const ranks = [
-  { name: "Big Brother", roleId: "1567269932989816879", level: 8, emoji: "👑" },
-  { name: "Chief Enforcer", roleId: "1567269932989816878", level: 7, emoji: "🎩" },
-  { name: "Brother", roleId: "1567269932989816877", level: 6, emoji: "🤝" },
-  { name: "Street Capo", roleId: "1567269932989816876", level: 5, emoji: "⚔️" },
-  { name: "Street Soldier", roleId: "1567269932989816875", level: 4, emoji: "🪖" },
-  { name: "Runner", roleId: "1567269932989816874", level: 3, emoji: "🏃" },
-  { name: "Lookout", roleId: "1567269932989816873", level: 2, emoji: "👀" },
-  { name: "Hang Around", roleId: "1567274843714486408", level: 1, emoji: "⏳" },
+  { name: "General", roleId: "1570478470482624554", level: 7, emoji: "👑" },
+  { name: "Colonel", roleId: "1570478472130986085", level: 6, emoji: "🤝" },
+  { name: "Captain", roleId: "1570478473150070915", level: 5, emoji: "⚔️" },
+  { name: "Soldier", roleId: "1570478475603611768", level: 4, emoji: "🪖" },
+  { name: "Member", roleId: "1570478477063229593", level: 3, emoji: "🏃" },
+  { name: "Lookout", roleId: "1570478478371848193", level: 2, emoji: "👀" },
+  { name: "Hang Around", roleId: "1570478479839989803", level: 1, emoji: "⏳" },
 ];
 
 const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
 
-const AUTO_MOD_MIN_LEVEL = 7;
+const AUTO_MOD_MIN_LEVEL = 6;
 
 // ===== Sollicitatie status =====
 const SOLLICITATIE_STATUS_CONFIG = {
