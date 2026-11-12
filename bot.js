@@ -52,7 +52,7 @@ const NON_ACTIEF_CHANNEL_ID = "1570478598782062603";
 
 // ===== Verify =====
 const VERIFY_CHANNEL_ID = "1570478543224307865";
-const VERIFY_ROLE_ID = "1570478508830887997"; // de rol die je krijgt na verificatie
+const VERIFY_ROLE_ID = "1570478508830887997";
 
 // ===== Ticket settings =====
 const TICKET_PANEL_CHANNEL_ID = "1570478554788139128";
@@ -166,6 +166,7 @@ const ranks = [
 const sortedRanks = [...ranks].sort((a, b) => b.level - a.level);
 
 const AUTO_MOD_MIN_LEVEL = 6;
+const MAX_RANK_LEVEL = Math.max(...ranks.map(r => r.level));
 
 // ===== Sollicitatie status =====
 const SOLLICITATIE_STATUS_CONFIG = {
@@ -255,6 +256,30 @@ function getCurrentRankLevel(member) {
 
 function hasGangRole(member) {
   return ranks.some(r => member.roles.cache.has(r.roleId));
+}
+
+// ===== RANG HIËRARCHIE =====
+/**
+ * Check of `actor` een target met `targetLevel` mag beheren.
+ * Regel: je kan alleen iemand met een STRIKT LAGERE rang beheren.
+ * De hoogste rang (General) mag iedereen beheren.
+ */
+function canManageLevel(actorMember, targetLevel) {
+  const actorLevel = getCurrentRankLevel(actorMember);
+  if (actorLevel <= 0) return false;
+  if (actorLevel >= MAX_RANK_LEVEL) return true; // General mag alles
+  return targetLevel < actorLevel;
+}
+
+function canManageMember(actorMember, targetMember) {
+  return canManageLevel(actorMember, getCurrentRankLevel(targetMember));
+}
+
+function hierarchyDenyMessage(targetLevel) {
+  if (targetLevel <= 0) {
+    return "❌ Deze gebruiker heeft geen gang-rang.";
+  }
+  return `❌ Je kan niemand met rang **${getRankNameByLevel(targetLevel)}** of hoger beheren. Alleen een hogere rang kan dit.`;
 }
 
 function shouldHaveAutoMod(member) {
@@ -1909,13 +1934,24 @@ function buildAdminReviewButtons(channelId, userId) {
   );
 }
 
-function buildRankSelectMenu(userId) {
-  const options = ranks.map(r => ({ label: r.name, value: r.roleId }));
+// ===== Aangepast: alleen rangen lager dan de actor worden getoond =====
+function buildRankSelectMenu(userId, actorMember = null) {
+  let allowedRanks = ranks;
+  if (actorMember) {
+    const actorLevel = getCurrentRankLevel(actorMember);
+    // General (hoogste rang) mag alles; anders alleen rangen strikt lager dan jezelf
+    if (actorLevel < MAX_RANK_LEVEL) {
+      allowedRanks = ranks.filter(r => r.level < actorLevel);
+    }
+  }
+
+  const options = allowedRanks.map(r => ({ label: r.name, value: r.roleId }));
+
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`app_rank_select_${userId}`)
       .setPlaceholder('Kies een rang voor de gebruiker...')
-      .addOptions(options)
+      .addOptions(options.length > 0 ? options : [{ label: 'Geen opties', value: 'none' }])
   );
 }
 
@@ -2045,8 +2081,22 @@ async function handlePromote(interaction) {
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const currentLevel = getCurrentRankLevel(targetMember);
   if (currentLevel === 0) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen gang rol!` });
-  let newLevel = Math.min(currentLevel + steps, 8);
-  if (newLevel === currentLevel) return interaction.editReply({ content: `❌ Al hoogste rang!` });
+
+  // Hiërarchie check: kan alleen iemand LAGER dan jezelf promoveren
+  if (!canManageMember(interaction.member, targetMember)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(currentLevel) });
+  }
+
+  let newLevel = Math.min(currentLevel + steps, MAX_RANK_LEVEL);
+  // Mag niet boven je eigen rang uitkomen
+  const actorLevel = getCurrentRankLevel(interaction.member);
+  if (actorLevel < MAX_RANK_LEVEL && newLevel >= actorLevel) {
+    newLevel = actorLevel - 1;
+  }
+  if (newLevel <= currentLevel) {
+    return interaction.editReply({ content: `❌ Kan niet promoveren: nieuwe rang zou hoger of gelijk zijn aan je eigen rang.` });
+  }
+
   const newRole = interaction.guild.roles.cache.get(getRoleIdByLevel(newLevel));
   try {
     await removeAllGangRoles(targetMember);
@@ -2072,6 +2122,12 @@ async function handleDemote(interaction) {
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   const currentLevel = getCurrentRankLevel(targetMember);
   if (currentLevel === 0) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen gang rol!` });
+
+  // Hiërarchie check: kan alleen iemand LAGER dan jezelf demoten
+  if (!canManageMember(interaction.member, targetMember)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(currentLevel) });
+  }
+
   let newLevel = Math.max(currentLevel - steps, 1);
   if (newLevel === currentLevel) return interaction.editReply({ content: `❌ Al laagste rang!` });
   const newRole = interaction.guild.roles.cache.get(getRoleIdByLevel(newLevel));
@@ -2097,6 +2153,12 @@ async function handleWarn(interaction) {
   const reason = interaction.options.getString("reason");
   if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
+
+  // Hiërarchie check
+  if (!canManageMember(interaction.member, targetMember)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(getCurrentRankLevel(targetMember)) });
+  }
+
   const warnRole = interaction.guild.roles.cache.get(number === 1 ? WARN_ROLE_LEVEL1 : WARN_ROLE_LEVEL2);
   try {
     await targetMember.roles.add(warnRole);
@@ -2114,6 +2176,12 @@ async function handleRemoveWarn(interaction) {
   const reason = interaction.options.getString("reason");
   if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
+
+  // Hiërarchie check
+  if (!canManageMember(interaction.member, targetMember)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(getCurrentRankLevel(targetMember)) });
+  }
+
   const warnRoleId = number === 1 ? WARN_ROLE_LEVEL1 : WARN_ROLE_LEVEL2;
   if (!targetMember.roles.cache.has(warnRoleId)) return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen waarschuwing!` });
   try {
@@ -2132,6 +2200,18 @@ async function handleAangenomen(interaction) {
   const reason = interaction.options.getString("reason");
   if (!hasAdminRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
 
+  // Hiërarchie check: de gekozen rang mag niet hoger of gelijk zijn aan je eigen rang
+  const rank = ranks.find(r => r.name === rankName);
+  const actorLevel = getCurrentRankLevel(interaction.member);
+  if (!rank) {
+    return interaction.editReply({ content: "❌ Ongeldige rang." });
+  }
+  if (actorLevel < MAX_RANK_LEVEL && rank.level >= actorLevel) {
+    return interaction.editReply({
+      content: `❌ Je kan geen rang **${rank.name}** (level ${rank.level}) geven. Je eigen rang is **${getRankNameByLevel(actorLevel)}** (level ${actorLevel}). Je kan alleen lagere rangen geven.`
+    });
+  }
+
   if (isBlacklisted(targetUser.id)) {
     return interaction.editReply({ content: `❌ ${targetUser.username} staat op de blacklist en kan niet aangenomen worden.` });
   }
@@ -2140,7 +2220,6 @@ async function handleAangenomen(interaction) {
     return interaction.editReply({ content: `❌ De gang is vol (${countGangMembers()}/${maxGangLeden}). Je kan niemand meer aannemen.` });
   }
 
-  const rank = ranks.find(r => r.name === rankName);
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
   try {
     await removeAllGangRoles(targetMember);
@@ -2169,6 +2248,16 @@ async function handleOntslagen(interaction) {
   const reason = interaction.options.getString("reason");
   if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
+
+  // Hiërarchie check: kan alleen iemand LAGER dan jezelf ontslaan
+  const targetLevel = getCurrentRankLevel(targetMember);
+  if (targetLevel === 0) {
+    return interaction.editReply({ content: `❌ ${targetUser.username} heeft geen gang rol!` });
+  }
+  if (!canManageLevel(interaction.member, targetLevel)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(targetLevel) });
+  }
+
   try {
     await removeAllGangRoles(targetMember);
     await removeLidRole(targetMember);
@@ -2241,6 +2330,12 @@ async function handleMute(interaction) {
   const reason = interaction.options.getString("reason") || "Geen reden";
   if (!hasModRole(interaction.member)) return interaction.editReply({ content: "❌ Je hebt niet de juiste rol!" });
   const targetMember = await interaction.guild.members.fetch(targetUser.id);
+
+  // Hiërarchie check
+  if (!canManageMember(interaction.member, targetMember)) {
+    return interaction.editReply({ content: hierarchyDenyMessage(getCurrentRankLevel(targetMember)) });
+  }
+
   const existingMuteRole = interaction.guild.roles.cache.find(r => r.name === "Gemute");
   if (existingMuteRole && targetMember.roles.cache.has(existingMuteRole.id)) return interaction.editReply({ content: "❌ Al gemute!" });
   const success = await applyMute(targetMember, minutes, reason);
@@ -2425,7 +2520,7 @@ async function handleAppAccept(interaction, userId) {
   }
   await interaction.editReply({
     content: "Kies de rang voor deze gebruiker in het dropdown menu hieronder:",
-    components: [buildRankSelectMenu(userId)]
+    components: [buildRankSelectMenu(userId, interaction.member)]
   });
 }
 
@@ -2454,6 +2549,20 @@ async function handleAppReject(interaction, userId) {
 
 async function handleAppRankSelect(interaction, userId) {
   if (!hasAdminRole(interaction.member)) return interaction.reply({ content: "❌ Je hebt niet de juiste rol!", ephemeral: true });
+
+  const roleId = interaction.values[0];
+  const rank = ranks.find(r => r.roleId === roleId);
+  if (!rank) return;
+
+  // Hiërarchie check: mag geen rang geven die hoger of gelijk is aan je eigen rang
+  const actorLevel = getCurrentRankLevel(interaction.member);
+  if (actorLevel < MAX_RANK_LEVEL && rank.level >= actorLevel) {
+    return interaction.reply({
+      content: `❌ Je kan geen rang **${rank.name}** (level ${rank.level}) geven. Je eigen rang is **${getRankNameByLevel(actorLevel)}** (level ${actorLevel}). Je kan alleen lagere rangen geven.`,
+      ephemeral: true
+    });
+  }
+
   if (isBlacklisted(userId)) {
     return interaction.reply({ content: `❌ <@${userId}> staat op de blacklist en kan niet aangenomen worden.`, ephemeral: true });
   }
@@ -2462,9 +2571,6 @@ async function handleAppRankSelect(interaction, userId) {
   }
 
   await interaction.deferUpdate();
-  const roleId = interaction.values[0];
-  const rank = ranks.find(r => r.roleId === roleId);
-  if (!rank) return;
 
   const reason = "Sollicitatie/Overstap";
   const targetUser = await client.users.fetch(userId).catch(() => null);
